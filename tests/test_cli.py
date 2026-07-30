@@ -1,0 +1,232 @@
+import json
+from pathlib import Path
+
+import yaml
+
+from loop_engineering.cli import main
+from tests.factories import valid_contract_data
+
+
+def test_cli_validates_contract_and_exports_schemas(tmp_path: Path, capsys) -> None:
+    contract = tmp_path / "contract.yaml"
+    contract.write_text(yaml.safe_dump(valid_contract_data(), sort_keys=False))
+
+    assert main(["contract", "validate", str(contract)]) == 0
+    assert json.loads(capsys.readouterr().out)["valid"] is True
+
+    schemas = tmp_path / "schemas"
+    assert main(["schema", "export", str(schemas)]) == 0
+    assert sorted(path.name for path in schemas.iterdir()) == [
+        "loop-contract.schema.json",
+        "loop-event.schema.json",
+        "loop-state.schema.json",
+    ]
+
+
+def test_cli_validation_error_does_not_echo_secret_input(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    data = valid_contract_data()
+    data["validation_commands"][0]["argv"] = ["curl", "--token", "secret-value"]
+    contract = tmp_path / "contract.yaml"
+    contract.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    assert main(["contract", "validate", str(contract)]) == 2
+    error = json.loads(capsys.readouterr().err)
+    assert "secret-value" not in json.dumps(error)
+    assert "inline secret flags" in error["message"]
+
+
+def test_cli_creates_and_reads_run(tmp_path: Path, capsys) -> None:
+    contract_data = valid_contract_data()
+    contract_data["repositories"][0]["path"] = str(tmp_path)
+    contract = tmp_path / "contract.yaml"
+    contract.write_text(yaml.safe_dump(contract_data, sort_keys=False))
+
+    assert main(["run", "create", str(contract), "--project", str(tmp_path)]) == 0
+    run_dir = tmp_path / ".loop-runs" / "loop-example-001"
+    capsys.readouterr()
+    assert main(["run", "status", str(run_dir)]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["status"] == "intake"
+
+
+def test_cli_result_updates_progress_and_strategy_counters(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    data = valid_contract_data()
+    data["repositories"][0]["path"] = str(tmp_path)
+    contract = tmp_path / "contract.yaml"
+    contract.write_text(yaml.safe_dump(data, sort_keys=False))
+    assert main(["run", "create", str(contract), "--project", str(tmp_path)]) == 0
+    run_dir = tmp_path / ".loop-runs" / data["loop_id"]
+    capsys.readouterr()
+
+    assert main(
+        [
+            "run",
+            "intent",
+            str(run_dir),
+            "--actor",
+            "maker",
+            "--summary",
+            "attempt",
+        ]
+    ) == 0
+    action_id = json.loads(capsys.readouterr().out)["action_id"]
+    assert main(
+        [
+            "run",
+            "result",
+            str(run_dir),
+            action_id,
+            "--actor",
+            "maker",
+            "--summary",
+            "no progress",
+            "--progress",
+            "no",
+            "--same-strategy",
+            "yes",
+        ]
+    ) == 0
+    capsys.readouterr()
+
+    assert main(["run", "status", str(run_dir)]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["no_progress_cycles"] == 1
+    assert status["same_strategy_retries"] == 1
+
+
+def test_cli_requires_contract_approval_before_planning(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    data = valid_contract_data()
+    data["repositories"][0]["path"] = str(tmp_path)
+    contract = tmp_path / "contract.yaml"
+    contract.write_text(yaml.safe_dump(data, sort_keys=False))
+    assert main(["run", "create", str(contract), "--project", str(tmp_path)]) == 0
+    run_dir = tmp_path / ".loop-runs" / data["loop_id"]
+    for target in ("discovering", "contract_drafting", "awaiting_approval"):
+        assert main(
+            [
+                "run",
+                "transition",
+                str(run_dir),
+                target,
+                "--actor",
+                "maker",
+                "--reason",
+                target,
+            ]
+        ) == 0
+    capsys.readouterr()
+
+    planning = [
+        "run",
+        "transition",
+        str(run_dir),
+        "planning",
+        "--actor",
+        "maker",
+        "--reason",
+        "approved plan",
+    ]
+    assert main(planning) == 2
+    assert "contract approval" in json.loads(capsys.readouterr().err)["message"]
+    assert main(
+        [
+            "run",
+            "approval",
+            str(run_dir),
+            "--actor",
+            "user",
+            "--gate",
+            "contract_approval",
+            "--decision",
+            "approve",
+            "--summary",
+            "approved",
+        ]
+    ) == 0
+    capsys.readouterr()
+    assert main(planning) == 0
+
+
+def test_cli_gate_check_returns_pause_for_production(tmp_path: Path, capsys) -> None:
+    contract = tmp_path / "contract.yaml"
+    contract.write_text(yaml.safe_dump(valid_contract_data(), sort_keys=False))
+    request = tmp_path / "request.json"
+    request.write_text(
+        json.dumps({"kind": "production_access", "target": "production"}),
+        encoding="utf-8",
+    )
+
+    assert main(["gate", "check", str(contract), str(request)]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["outcome"] == "pause"
+    assert output["confirmation"].startswith("⚠️ 危险操作检测！")
+
+
+def test_cli_replaces_only_next_contract_version_while_awaiting(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    data = valid_contract_data()
+    data["repositories"][0]["path"] = str(tmp_path)
+    first = tmp_path / "contract-v1.yaml"
+    first.write_text(yaml.safe_dump(data, sort_keys=False))
+    assert main(["run", "create", str(first), "--project", str(tmp_path)]) == 0
+    run_dir = tmp_path / ".loop-runs" / data["loop_id"]
+    for target in ("discovering", "contract_drafting", "awaiting_approval"):
+        assert main(
+            [
+                "run",
+                "transition",
+                str(run_dir),
+                target,
+                "--actor",
+                "maker",
+                "--reason",
+                target,
+            ]
+        ) == 0
+    assert main(
+        [
+            "run",
+            "approval",
+            str(run_dir),
+            "--actor",
+            "user",
+            "--gate",
+            "final_acceptance",
+            "--decision",
+            "approve",
+            "--summary",
+            "version one only",
+        ]
+    ) == 0
+    data["contract_version"] = 2
+    second = tmp_path / "contract-v2.yaml"
+    second.write_text(yaml.safe_dump(data, sort_keys=False))
+    capsys.readouterr()
+
+    assert main(
+        [
+            "run",
+            "revise",
+            str(run_dir),
+            str(second),
+            "--actor",
+            "user",
+            "--summary",
+            "approved revision",
+        ]
+    ) == 0
+    assert json.loads(capsys.readouterr().out)["contract_version"] == 2
+    assert main(["run", "status", str(run_dir)]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["approvals"] == {"contract_revision": True}

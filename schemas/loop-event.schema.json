@@ -1,0 +1,130 @@
+{
+  "$defs": {
+    "EventKind": {
+      "enum": [
+        "transition",
+        "intent",
+        "result",
+        "approval",
+        "evidence",
+        "checker"
+      ],
+      "title": "EventKind",
+      "type": "string"
+    },
+    "LoopStatus": {
+      "enum": [
+        "intake",
+        "discovering",
+        "contract_drafting",
+        "awaiting_approval",
+        "designing",
+        "planning",
+        "executing",
+        "verifying",
+        "checking",
+        "deciding",
+        "paused",
+        "done",
+        "blocked",
+        "budget_exhausted"
+      ],
+      "title": "LoopStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "action_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Action Id"
+    },
+    "actor": {
+      "title": "Actor",
+      "type": "string"
+    },
+    "contract_version": {
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "event_id": {
+      "title": "Event Id",
+      "type": "string"
+    },
+    "evidence_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "from_status": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LoopStatus"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "kind": {
+      "$ref": "#/$defs/EventKind"
+    },
+    "loop_id": {
+      "title": "Loop Id",
+      "type": "string"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    },
+    "sequence": {
+      "minimum": 1,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
+    },
+    "timestamp": {
+      "format": "date-time",
+      "title": "Timestamp",
+      "type": "string"
+    },
+    "to_status": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LoopStatus"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "sequence",
+    "event_id",
+    "loop_id",
+    "contract_version",
+    "timestamp",
+    "actor",
+    "kind",
+    "summary"
+  ],
+  "title": "LoopEvent",
+  "type": "object"
+}

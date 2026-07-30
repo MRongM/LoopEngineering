@@ -1,0 +1,529 @@
+{
+  "$defs": {
+    "AcceptanceCriterion": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^AC-[1-9][0-9]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "required_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Required Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "required_evidence"
+      ],
+      "title": "AcceptanceCriterion",
+      "type": "object"
+    },
+    "AuthorizedOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        },
+        "repository_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repository Id"
+        },
+        "target": {
+          "minLength": 1,
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "target"
+      ],
+      "title": "AuthorizedOperation",
+      "type": "object"
+    },
+    "Budget": {
+      "additionalProperties": false,
+      "properties": {
+        "max_checker_revisions": {
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Max Checker Revisions",
+          "type": "integer"
+        },
+        "max_iterations": {
+          "maximum": 12,
+          "minimum": 1,
+          "title": "Max Iterations",
+          "type": "integer"
+        },
+        "max_minutes": {
+          "maximum": 240,
+          "minimum": 1,
+          "title": "Max Minutes",
+          "type": "integer"
+        },
+        "max_same_strategy_retries": {
+          "const": 1,
+          "default": 1,
+          "title": "Max Same Strategy Retries",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_iterations",
+        "max_minutes",
+        "max_checker_revisions"
+      ],
+      "title": "Budget",
+      "type": "object"
+    },
+    "ControlMode": {
+      "enum": [
+        "collaborative",
+        "autonomous"
+      ],
+      "title": "ControlMode",
+      "type": "string"
+    },
+    "GitPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "deploy": {
+          "const": false,
+          "default": false,
+          "title": "Deploy",
+          "type": "boolean"
+        },
+        "force_push": {
+          "const": false,
+          "default": false,
+          "title": "Force Push",
+          "type": "boolean"
+        },
+        "history_rewrite": {
+          "const": false,
+          "default": false,
+          "title": "History Rewrite",
+          "type": "boolean"
+        },
+        "merge": {
+          "const": false,
+          "default": false,
+          "title": "Merge",
+          "type": "boolean"
+        },
+        "targets": {
+          "items": {
+            "$ref": "#/$defs/GitTarget"
+          },
+          "minItems": 1,
+          "title": "Targets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "targets"
+      ],
+      "title": "GitPolicy",
+      "type": "object"
+    },
+    "GitTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "branch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Branch"
+        },
+        "commit": {
+          "default": false,
+          "title": "Commit",
+          "type": "boolean"
+        },
+        "create_pr": {
+          "default": false,
+          "title": "Create Pr",
+          "type": "boolean"
+        },
+        "create_worktree": {
+          "default": false,
+          "title": "Create Worktree",
+          "type": "boolean"
+        },
+        "pr_target": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pr Target"
+        },
+        "push": {
+          "default": false,
+          "title": "Push",
+          "type": "boolean"
+        },
+        "remote": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Remote"
+        },
+        "repository_id": {
+          "title": "Repository Id",
+          "type": "string"
+        },
+        "worktree_path": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worktree Path"
+        }
+      },
+      "required": [
+        "repository_id"
+      ],
+      "title": "GitTarget",
+      "type": "object"
+    },
+    "PermissionPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "database_changes": {
+          "default": false,
+          "title": "Database Changes",
+          "type": "boolean"
+        },
+        "dependency_changes": {
+          "default": false,
+          "title": "Dependency Changes",
+          "type": "boolean"
+        },
+        "network": {
+          "default": false,
+          "title": "Network",
+          "type": "boolean"
+        },
+        "production_access": {
+          "default": false,
+          "title": "Production Access",
+          "type": "boolean"
+        },
+        "sensitive_data": {
+          "default": false,
+          "title": "Sensitive Data",
+          "type": "boolean"
+        }
+      },
+      "title": "PermissionPolicy",
+      "type": "object"
+    },
+    "RepositoryTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_paths": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Allowed Paths",
+          "type": "array"
+        },
+        "base_branch": {
+          "minLength": 1,
+          "title": "Base Branch",
+          "type": "string"
+        },
+        "depends_on": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Depends On",
+          "type": "array"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "path": {
+          "format": "path",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "path",
+        "base_branch",
+        "allowed_paths"
+      ],
+      "title": "RepositoryTarget",
+      "type": "object"
+    },
+    "RiskLevel": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "title": "RiskLevel",
+      "type": "string"
+    },
+    "ValidationCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Argv",
+          "type": "array"
+        },
+        "criterion_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Criterion Ids",
+          "type": "array"
+        },
+        "cwd": {
+          "title": "Cwd",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^VAL-[1-9][0-9]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "repository_id": {
+          "title": "Repository Id",
+          "type": "string"
+        },
+        "requires_network": {
+          "default": false,
+          "title": "Requires Network",
+          "type": "boolean"
+        },
+        "timeout_seconds": {
+          "default": 600,
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "repository_id",
+        "cwd",
+        "argv",
+        "criterion_ids"
+      ],
+      "title": "ValidationCommand",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "acceptance_criteria": {
+      "items": {
+        "$ref": "#/$defs/AcceptanceCriterion"
+      },
+      "minItems": 1,
+      "title": "Acceptance Criteria",
+      "type": "array"
+    },
+    "assumptions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Assumptions",
+      "type": "array"
+    },
+    "authorized_operations": {
+      "items": {
+        "$ref": "#/$defs/AuthorizedOperation"
+      },
+      "title": "Authorized Operations",
+      "type": "array"
+    },
+    "budget": {
+      "$ref": "#/$defs/Budget"
+    },
+    "contract_version": {
+      "minimum": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "git_policy": {
+      "$ref": "#/$defs/GitPolicy"
+    },
+    "human_gates": {
+      "items": {
+        "enum": [
+          "contract_approval",
+          "design_approval",
+          "plan_approval",
+          "dangerous_action",
+          "final_acceptance"
+        ],
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Human Gates",
+      "type": "array"
+    },
+    "in_scope": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "In Scope",
+      "type": "array"
+    },
+    "loop_id": {
+      "pattern": "^loop-[a-z0-9][a-z0-9-]*$",
+      "title": "Loop Id",
+      "type": "string"
+    },
+    "mode": {
+      "$ref": "#/$defs/ControlMode",
+      "default": "collaborative"
+    },
+    "objective": {
+      "minLength": 1,
+      "title": "Objective",
+      "type": "string"
+    },
+    "out_of_scope": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Out Of Scope",
+      "type": "array"
+    },
+    "parent_loop_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Loop Id"
+    },
+    "permissions": {
+      "$ref": "#/$defs/PermissionPolicy"
+    },
+    "protocol_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Protocol Version",
+      "type": "string"
+    },
+    "repositories": {
+      "items": {
+        "$ref": "#/$defs/RepositoryTarget"
+      },
+      "minItems": 1,
+      "title": "Repositories",
+      "type": "array"
+    },
+    "risk_level": {
+      "$ref": "#/$defs/RiskLevel"
+    },
+    "stop_conditions": {
+      "items": {
+        "enum": [
+          "done",
+          "blocked",
+          "budget_exhausted"
+        ],
+        "type": "string"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Stop Conditions",
+      "type": "array"
+    },
+    "validation_commands": {
+      "items": {
+        "$ref": "#/$defs/ValidationCommand"
+      },
+      "minItems": 1,
+      "title": "Validation Commands",
+      "type": "array"
+    }
+  },
+  "required": [
+    "loop_id",
+    "contract_version",
+    "objective",
+    "repositories",
+    "in_scope",
+    "out_of_scope",
+    "acceptance_criteria",
+    "validation_commands",
+    "risk_level",
+    "permissions",
+    "git_policy",
+    "budget",
+    "human_gates",
+    "stop_conditions"
+  ],
+  "title": "LoopContract",
+  "type": "object"
+}

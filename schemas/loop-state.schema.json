@@ -1,0 +1,100 @@
+{
+  "$defs": {
+    "LoopStatus": {
+      "enum": [
+        "intake",
+        "discovering",
+        "contract_drafting",
+        "awaiting_approval",
+        "designing",
+        "planning",
+        "executing",
+        "verifying",
+        "checking",
+        "deciding",
+        "paused",
+        "done",
+        "blocked",
+        "budget_exhausted"
+      ],
+      "title": "LoopStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "checker_revisions_used": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Checker Revisions Used",
+      "type": "integer"
+    },
+    "contract_version": {
+      "minimum": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "iterations_used": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Iterations Used",
+      "type": "integer"
+    },
+    "last_event_sequence": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Last Event Sequence",
+      "type": "integer"
+    },
+    "loop_id": {
+      "title": "Loop Id",
+      "type": "string"
+    },
+    "no_progress_cycles": {
+      "default": 0,
+      "minimum": 0,
+      "title": "No Progress Cycles",
+      "type": "integer"
+    },
+    "pause_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pause Reason"
+    },
+    "same_strategy_retries": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Same Strategy Retries",
+      "type": "integer"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/LoopStatus"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "loop_id",
+    "contract_version",
+    "status",
+    "started_at",
+    "updated_at"
+  ],
+  "title": "LoopState",
+  "type": "object"
+}
