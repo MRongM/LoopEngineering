@@ -40,3 +40,32 @@ def test_adoption_guide_has_manual_and_installed_paths() -> None:
     assert "实现完成后：CLI + Codex Skill" in text
     assert "loop-engineering project init" in text
     assert "$loop-engineering" in text
+
+
+def test_readme_documents_one_line_direct_clone_install() -> None:
+    text = Path("README.md").read_text(encoding="utf-8")
+    install = (
+        'mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"'
+        ' && git clone --depth 1 --branch master'
+        ' "https://github.com/MRongM/LoopEngineering.git"'
+        ' "${CODEX_HOME:-$HOME/.codex}/skills/loop-engineering"'
+        ' && uv tool install'
+        ' "${CODEX_HOME:-$HOME/.codex}/skills/loop-engineering"'
+    )
+
+    assert install in text
+    assert "Codex discovers `adapters/codex/SKILL.md` recursively" in text
+    assert "ln -s" not in text
+
+
+def test_readme_documents_guarded_one_line_uninstall() -> None:
+    text = Path("README.md").read_text(encoding="utf-8")
+    uninstall = (
+        'skill_dir="${CODEX_HOME:-$HOME/.codex}/skills/loop-engineering";'
+        ' test -f "$skill_dir/adapters/codex/SKILL.md"'
+        ' && uv tool uninstall "loop-engineering"'
+        ' && command rm -r -- "$skill_dir"'
+    )
+
+    assert uninstall in text
+    assert "rm -rf" not in text
