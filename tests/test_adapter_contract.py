@@ -123,6 +123,32 @@ def test_codex_skill_uses_one_default_pre_execution_approval() -> None:
         assert obsolete not in body
 
 
+def test_codex_skill_keeps_control_files_inside_target_project() -> None:
+    text = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8")
+    _, _, body = text.split("---", 2)
+    adoption = Path("docs/adoption.md").read_text(encoding="utf-8")
+
+    for required in (
+        "`.loop-runs/.drafts/<loop-id>/contract.yaml`",
+        "`<run-dir>/inputs/`",
+        "Perform every adapter-owned preparatory write inside the target project",
+        "Use resolved absolute paths for every `repositories[].path`",
+        "Never create adapter-owned control files outside the target project",
+    ):
+        assert required in body
+
+    for obsolete in (
+        "newly created\ntemporary directory",
+        "not the target project",
+    ):
+        assert obsolete not in body
+
+    assert "`.loop-runs/` 中" in adoption
+    assert "系统临时目录" in adoption
+    assert "所有预备阶段文件" in adoption
+    assert "绝对路径" in adoption
+
+
 def test_codex_skill_bundles_autonomous_risk_acceptance() -> None:
     text = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8")
     _, _, body = text.split("---", 2)

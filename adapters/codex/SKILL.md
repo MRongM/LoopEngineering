@@ -69,9 +69,16 @@ or call an external write API until the Loop Contract has been shown to the user
 and explicitly approved. The contract's exact preauthorization may cover later
 Git actions. New targets or permissions require a revised approval.
 
-The sole preapproval write is an adapter-owned contract draft in a newly created
-temporary directory for schema validation. It must not touch the target project and
-is removed after the approved contract is persisted.
+The sole preapproval write is the adapter-owned contract draft at
+`<project-root>/.loop-runs/.drafts/<loop-id>/contract.yaml` for schema validation.
+Perform every adapter-owned preparatory write inside the target project.
+Use resolved absolute paths for every `repositories[].path` because relative paths are
+resolved from the nested contract location.
+Never create adapter-owned control files outside the target project, including system
+temporary directories and the user's home directory. After the run exists, place every
+path-based CLI input, validation cache and temporary output under the run directory; use
+`<run-dir>/inputs/` for request and context documents. Never stage or commit `.loop-runs/`
+content.
 
 ## Intake
 
@@ -87,7 +94,9 @@ is removed after the approved contract is persisted.
    `authorized_operations` before asking for approval.
    Every `authorized_operations` entry needs `risk_id`, `kind`, `repository_id`,
    exact `target`, `risk_level`, `impact`, `worst_case`, `recovery` and `evidence`.
-   Keep the unapproved draft in an ephemeral temporary directory, not the target project.
+   Keep the unapproved draft at
+   `.loop-runs/.drafts/<loop-id>/contract.yaml` relative to the project root. Populate
+   every `repositories[].path` with its resolved absolute Git root.
 5. Always use `contract_approval`; do not add `design_approval` or `plan_approval` by default.
    Add `final_acceptance` for collaborative mode. Autonomous `0.2.0` does not add `final_acceptance` based on risk level; preserve any extra gate explicitly required by
    the current user instruction, project rules or an existing contract.
@@ -116,7 +125,7 @@ For each unmet acceptance criterion:
    to BUDGET_EXHAUSTED. A diagnosis-required result returns to planning and requires
    a new causal hypothesis before another action. Otherwise choose one smallest
    verifiable increment.
-2. Serialize the exact ActionRequest and run
+2. Serialize the exact ActionRequest under `<run-dir>/inputs/` and run
    `loop-engineering gate check "<run-dir>" "<request-json>"`.
    Handle the returned decision exactly:
    - `allow`: continue without another human confirmation.
@@ -214,7 +223,8 @@ For each unmet acceptance criterion:
 
 ## Completion
 
-Do not claim DONE from prose. Build the strict CompletionContext and run
+Do not claim DONE from prose. Build the strict CompletionContext at
+`<run-dir>/inputs/completion-context.json` and run
 `loop-engineering completion evaluate "<contract-path>" "<context-json>"`.
 Only a zero exit code permits calling `loop-engineering run complete "<run-dir>"
 --actor maker --reason "all DONE requirements passed"`. That authoritative command
