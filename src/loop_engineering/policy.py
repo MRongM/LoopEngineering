@@ -21,6 +21,7 @@ class ActionKind(StrEnum):
     NETWORK = "network"
     SENSITIVE_DATA = "sensitive_data"
     PRODUCTION_ACCESS = "production_access"
+    PLATFORM_STATE = "platform_state"
     GIT_COMMIT = "git_commit"
     GIT_PUSH = "git_push"
     CREATE_PR = "create_pr"
@@ -293,6 +294,7 @@ class GatePolicy:
             ActionKind.NETWORK,
             ActionKind.SYSTEM_CONFIG,
             ActionKind.PERMISSION_CHANGE,
+            ActionKind.PLATFORM_STATE,
         }
         if request.kind in dangerous:
             return self._scope_pause(

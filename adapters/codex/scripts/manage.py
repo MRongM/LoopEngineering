@@ -9,7 +9,7 @@ from pathlib import Path
 
 TOOL_NAME = "loop-engineering"
 CODEX_SKILL_NAME = "loop-engine"
-CODEX_INVOCATION_POLICY = "policy:\n  allow_implicit_invocation: false\n"
+CODEX_INVOCATION_POLICY = "policy:\n  allow_implicit_invocation: true\n"
 OFFICIAL_REPOSITORY = "https://github.com/MRongM/LoopEngineering.git"
 MANAGED_BRANCH = "master"
 PROTOCOL_HEADER = "# Loop Engineering Core Protocol 0.2.0"

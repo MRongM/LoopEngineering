@@ -40,9 +40,31 @@ loop-engineering --version
 if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
 ```
 
-After the command reports the version, start a new Codex session and invoke
-`$loop-engine`. The Skill is manual-only and is never selected from task semantics alone.
-Include `$loop-engine` again in every later user message that should continue the Skill.
+After the command reports the version, start a new Codex session. Only a new task starts with
+`$loop-engine`; later turns for the uniquely bound task may use natural language. Host
+selection alone cannot create or adopt a task, approve a contract, or modify a Run.
+
+### Codex task-scoped continuation
+
+An explicit start first binds one Pending Draft to the current conversation. Clarifications,
+approval of its latest complete summary, revisions, pause recovery, cancellation and feedback
+can then be expressed naturally without a fixed confirmation subcommand. Questions, partial
+answers, stale references and unrelated messages grant no approval.
+
+After contract approval, every new Codex Loop task uses a canonical Goal bound to the Run and
+append-only ledger by default. The contract must disclose exact Goal create and complete
+operations before approval. A missing Goal tool, unrelated active Goal, binding mismatch or
+multiple candidate tasks causes a hard pause; the Adapter never scans for or adopts a latest
+Run. Explicit `$loop-engine` remains available for conservative recovery.
+
+The Goal is only a scheduler. Loop Engineering remains authoritative for scope, permissions,
+evidence, engineering budgets, Checker findings and `DONE`; Goal token usage is not converted
+into Loop iterations or time. Cancellation or a terminal Run closes implicit continuation,
+and new work again requires `$loop-engine`. Only authoritative Loop `DONE` can complete the
+Goal.
+
+The managed checkout must contain this adapter version, and Codex must be restarted after a
+user-operated update before task-scoped continuation is available.
 
 ## Update the Skill from a shell
 

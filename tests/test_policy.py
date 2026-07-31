@@ -146,6 +146,72 @@ def test_v020_autonomous_new_permission_requires_revision() -> None:
     assert decision.required_gate == "contract_revision"
 
 
+def platform_state_contract_data() -> dict:
+    data = valid_contract_data()
+    data["mode"] = "autonomous"
+    data["risk_level"] = "medium"
+    data["human_gates"] = ["contract_approval"]
+    data["authorized_operations"] = [
+        {
+            "risk_id": "RISK-1",
+            "kind": "platform_state",
+            "target": "codex-goal:create:/work/project/.loop-runs/loop-example",
+            "risk_level": "medium",
+            "impact": "Creates one explicitly requested host Goal",
+            "worst_case": "The Goal consumes host continuation budget unexpectedly",
+            "recovery": "The user pauses or cancels the Goal",
+            "evidence": "The approved run requests cross-turn continuation",
+        }
+    ]
+    return data
+
+
+def test_platform_state_requires_an_exact_bound_risk_grant() -> None:
+    target = "codex-goal:create:/work/project/.loop-runs/loop-example"
+    exact = approved_policy(platform_state_contract_data()).evaluate(
+        ActionRequest(kind=ActionKind.PLATFORM_STATE, target=target)
+    )
+
+    missing_data = platform_state_contract_data()
+    missing_data["authorized_operations"] = []
+    missing = approved_policy(missing_data).evaluate(
+        ActionRequest(kind=ActionKind.PLATFORM_STATE, target=target)
+    )
+
+    changed = approved_policy(platform_state_contract_data()).evaluate(
+        ActionRequest(
+            kind=ActionKind.PLATFORM_STATE,
+            target="codex-goal:create:/work/project/.loop-runs/loop-other",
+        )
+    )
+
+    assert exact.outcome is GateOutcome.ALLOW
+    for decision in (missing, changed):
+        assert decision.outcome is GateOutcome.PAUSE
+        assert decision.required_gate == "contract_revision"
+
+
+def test_platform_state_rejects_a_stale_contract_approval() -> None:
+    data = platform_state_contract_data()
+    contract = LoopContract.model_validate(data)
+    stale = ContractAuthorization(
+        protocol_version="0.2.0",
+        contract_version=contract.contract_version,
+        contract_sha256="0" * 64,
+        accepted_risk_ids=["RISK-1"],
+    )
+
+    decision = GatePolicy(contract, authorization=stale).evaluate(
+        ActionRequest(
+            kind=ActionKind.PLATFORM_STATE,
+            target="codex-goal:create:/work/project/.loop-runs/loop-example",
+        )
+    )
+
+    assert decision.outcome is GateOutcome.PAUSE
+    assert decision.required_gate == "contract_approval"
+
+
 def test_v020_collaborative_keeps_fresh_production_human_gate() -> None:
     data = autonomous_risk_contract_data()
     data["mode"] = "collaborative"

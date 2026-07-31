@@ -112,9 +112,10 @@ loop-engineering project init --root "/work/acme-orders" --update-gitignore
 在项目根 `AGENTS.md` 中加入：
 
 ```markdown
-Never invoke Loop Engineering automatically.
-Only a current-message $loop-engine invocation starts a new Loop task.
-Every user message that should run or continue Loop Engineering must include $loop-engine.
+Only a current-message $loop-engine invocation may start a new Loop task.
+Implicit Skill selection may continue only one current-conversation Pending Draft or one
+native-Goal-and-ledger-bound active Run; otherwise it must not mutate Loop state.
+After that unique binding exists, accept unambiguous natural-language task feedback.
 Require an approved Loop Contract before mutation and evidence before DONE.
 ```
 
@@ -128,6 +129,35 @@ $loop-engine
 Git：允许创建分支、提交、推送和 PR
 ```
 
+只有新任务的首条消息需要 `$loop-engine`。当前对话中唯一 Pending Draft 建立后，
+后续澄清、完整契约摘要批准、修订、暂停恢复、取消和反馈都可以自然语言表达，无需固定
+`confirm` 子命令。问题、局部决定、附加条件、旧版本引用和无关消息都不构成批准。
+
+### Codex 任务级自然语言续跑
+
+每个新批准的 Codex Loop 任务默认创建 Goal 绑定，无需额外 opt-in：
+
+```text
+$loop-engine
+目标：修复订单重复提交问题
+验收：先复现失败，再证明修复；相关回归测试通过
+```
+
+Adapter 必须先在完整 Loop Contract 中披露精确的 Goal 创建与完成操作；批准并创建
+Run 后，才可创建以
+`$loop-engine goal-bridge/v1` 开头、绑定该绝对运行目录的 Goal。已有无关活动 Goal
+或缺失 Goal 工具属于平台硬门，Adapter 不会覆盖、接管或扫描“最新 Run”替代绑定；
+用户可以用显式 `$loop-engine` 做保守恢复。
+
+每次自动续跑仍以 Loop 账本为权威，重新检查合同批准、未决 intent、Loop 预算和
+Action Gate。Goal Token 预算只是宿主外层上限，不会换算或扩大 Loop 的执行轮次、
+分钟数和 Checker 修订预算。只有 Loop 权威进入 `DONE` 后才能完成 Goal；暂停、
+`BLOCKED` 和 `BUDGET_EXHAUSTED` 都不会被伪装成完成。
+
+普通暂停可由同一绑定任务的自然语言反馈恢复。取消使用持久的 `user_cancelled:`
+暂停原因关闭隐式续跑；取消或终态后的新工作必须重新以 `$loop-engine` 启动。托管
+Skill 更新后需要创建新的 Codex 会话才能使用该流程。
+
 ### 6. 批准并观察
 
 适配器的所有预备阶段文件写入都必须在目标项目的 `.loop-runs/` 中完成：审批前
@@ -137,11 +167,12 @@ Git：允许创建分支、提交、推送和 PR
 用户主目录或其他项目外位置创建适配器控制文件，也不得提交 `.loop-runs/` 内容。
 
 Agent 必须先展示 Loop Contract；Autonomous 契约还必须用一个风险表披露精确操作、
-影响、最坏结果和恢复方式。一次批准后，运行状态位于：
+影响、最坏结果和恢复方式。对最新完整摘要的一次无歧义自然语言批准即可记录审批，
+无需固定触发前缀或子命令。批准后，运行状态位于：
 `/work/acme-orders/.loop-runs/loop-example-001/`。契约内已接受风险不再逐项确认；
 新目标、权限或风险会生成完整契约修订。平台自身的强制审批仍可能暂停执行。
-后续批准或反馈消息若要继续该 Skill，也必须再次显式写出 `$loop-engine`，例如
-`$loop-engine 确认`。
+任何自然语言回复仍只能作用于唯一 Pending Draft 或经 Goal/账本验证的同一 Run；
+绑定缺失、歧义、无关、已取消或终态时不得执行 Loop 修改。
 
 ### 7. 验收交付
 

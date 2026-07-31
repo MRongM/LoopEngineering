@@ -8,13 +8,115 @@ description: Run evidence-gated Loop Engineering workflows and manage the Codex 
 Compatible Core: >=0.2,<0.3
 <!-- Legacy lifecycle updater compatibility: name: loop-engineering -->
 
-## Manual invocation
+## Task-scoped continuation
 
-Start this Skill only when the current user message explicitly invokes `$loop-engine`.
-Do not infer activation from the task type, a plain-language mention, or a previous task.
-Every later user message that should continue this Skill must invoke `$loop-engine` again.
-Whenever this Skill pauses, require the user's reply to begin with `$loop-engine`.
+Only explicit `$loop-engine` may start a new Loop task.
+`allow_implicit_invocation: true` is eligibility, not authorization.
+After a task is uniquely bound, later user messages may continue it in natural language.
+Never use implicit selection to start or adopt a task.
 The trigger name does not rename Loop Engineering, the `loop-engineering` CLI, or Core.
+
+Natural-language clarification, approval, revision, pause recovery, cancellation and feedback
+are permitted only when they unambiguously address the same bound task. An unrelated message
+does not become Loop input merely because a task is active.
+
+Resolve admission before Intake, approval, Run adoption or any other mutation:
+
+1. An explicit `$loop-engine` message with no bound task may start a new Intake.
+2. An explicit message that addresses one uniquely bound task continues that task and does
+   not create another one.
+3. Without the trigger, continue only one Pending Draft bound to the current conversation or
+   one active Goal/Run binding verified from native Goal state and the append-only ledger.
+4. If the binding is missing, ambiguous, stale, unrelated, cancelled or terminal, make no
+   Loop mutation. Require explicit `$loop-engine` for a new task or conservative recovery.
+
+Do not scan `.loop-runs/` for the newest Draft or Run, rank candidates by time, or adopt a
+task because its topic resembles the current message.
+
+### Pending Draft binding
+
+Before a Run exists, natural-language continuation is allowed only when the current Codex
+conversation contains exactly one Draft created by an earlier explicit `$loop-engine` start.
+Use the visible conversation chain; do not discover Drafts from the filesystem. The binding
+covers clarification, the latest complete-contract decision, rejection and cancellation.
+
+Questions, partial decisions, conditional replies, stale references and unrelated messages
+are not approvals. Do not combine separate partial replies into approval. Cancellation closes
+the conversation binding; a later message cannot silently revive or adopt that Draft.
+
+### Create and bind the default Goal
+
+Every newly approved Codex Loop task uses Goal binding by default. Before approval, include
+exact `platform_state` operations for both `codex-goal:create:<resolved-run-dir>` and
+`codex-goal:complete:<resolved-run-dir>` in the complete Loop Contract risk disclosure.
+Do not create the Goal before the Run exists and current contract approval is recorded.
+
+The canonical Goal marker is `$loop-engine goal-bridge/v1`; its objective must begin with:
+
+```text
+$loop-engine goal-bridge/v1
+loop_id: <loop-id>
+run_dir: <resolved-absolute-run-directory>
+```
+
+The objective is only a durable pointer. It grants no approval, permission, risk acceptance,
+budget expansion or completion authority. Do not include the contract version because a
+contract revision stays in the same Run; re-read current authorization from the ledger.
+
+After Run creation and approval:
+
+1. Call `get_goal`. If an unrelated active Goal exists, treat it as a platform hard gate;
+   never replace or adopt it. Reconcile an already matching Goal instead of creating another.
+2. Serialize and run the exact `platform_state` `gate check` for Goal creation.
+3. Record a Loop intent containing the loop ID, absolute run directory and canonical
+   objective SHA-256.
+4. Call `create_goal`. Do not set `token_budget` unless the user explicitly supplies it;
+   never infer a token amount from Loop budgets.
+5. Observe the real Goal state and record the result. Persist a Goal identifier only when
+   the tool actually returns one; never invent it.
+
+If the native Goal tools are unavailable, a Goal is unrelated, or creation cannot be proven,
+hard-pause Goal binding. Explicit `$loop-engine` may conservatively continue the identified
+Run, but implicit selection may not substitute a newest-Run guess.
+
+If execution stops between the create intent and result, call `get_goal` and compare the
+canonical objective before doing anything else. A match reconciles the existing intent; a
+mismatch or ambiguous response pauses. Never create a second Goal as a blind retry.
+
+### Resume a Goal/Run binding
+
+At the start of every host continuation:
+
+1. Use `get_goal` to verify the canonical objective, loop ID and absolute run directory.
+2. Run `loop-engineering run events` and require a matching successful Goal binding, or
+   reconcile the one pending Goal-create intent against real host state.
+3. Run `loop-engineering run status`, then reconcile every other pending intent before a
+   new action.
+4. Run `loop-engineering budget check`, followed by the ordinary per-action Gate and Maker
+   loop. Never rely on model memory as the source of truth.
+5. Apply a user message only when it unambiguously addresses this task or its current prompt;
+   otherwise return without mutation.
+
+Any mismatch, unrelated active Goal, missing Goal tool, stale contract approval or pending
+intent pauses the bridge. Never infer approval or task identity from Goal continuation alone.
+
+### Yield, cancel and finish
+
+- For `AWAITING_APPROVAL` or an ordinary `PAUSED`, stop automatic actions and accept an
+  unambiguous natural-language reply for the verified binding.
+- For user cancellation, close a Pending Draft binding or transition a mutable Run to
+  `PAUSED` with a stable `user_cancelled:` reason. A cancelled task cannot resume implicitly;
+  preserve its ledger and require explicit `$loop-engine` for new work.
+- For `BLOCKED` or `BUDGET_EXHAUSTED`, leave the Goal unfinished and report the exact stop
+  reason. These immutable Runs cannot continue implicitly or have either budget expanded.
+- Only after authoritative Loop `DONE` may the Adapter gate the exact Goal-completion
+  `platform_state`, record its intent, call `update_goal` with `complete`, and record the
+  observed result.
+- Do not call `update_goal` with `blocked`; Codex blocking has separate host rules and is not
+  a safe mapping from a Loop status.
+
+Codex Goal token usage is an outer host limit. Loop iterations, elapsed minutes and Checker
+revisions remain independent inner limits. Neither budget changes or authorizes the other.
 
 ## Adapter lifecycle
 
@@ -116,10 +218,12 @@ content.
    actions, remaining pause conditions and stop conditions. In autonomous mode, label
    the risk section `Autonomous Risk Acceptance` and show one table containing each
    `risk_id`, `kind`, exact target, `impact`, `worst_case`, `recovery` and `evidence`.
-8. Ask for one pre-execution approval of that complete summary. Clarifying missing
-   information is not approval, and separate partial answers must not be combined into it.
-   Ask the user to reply with `$loop-engine confirm` so the approval turn explicitly
-   reactivates this Skill.
+8. Ask for one pre-execution approval of that complete summary.
+   Accept one unambiguous natural-language approval of the latest complete summary.
+   Do not require a fixed confirmation subcommand or trigger prefix.
+   Questions, partial decisions, conditional replies, stale references and unrelated messages are not approvals.
+   Before Run creation, require the unique current-conversation Pending Draft binding; after
+   Goal creation, require the verified Goal/Run binding. Never combine separate replies.
 9. After approval, run
    `loop-engineering run create "<contract-path>" --project "<project-root>"`,
    retain the created `intake` snapshot, record the discovering/drafting/awaiting

@@ -201,8 +201,8 @@ def test_install_rejects_a_skill_name_found_only_outside_frontmatter(
     assert calls == []
 
 
-@pytest.mark.parametrize("policy", [None, "policy:\n  allow_implicit_invocation: true\n"])
-def test_install_requires_the_manual_invocation_policy(
+@pytest.mark.parametrize("policy", [None, "policy:\n  allow_implicit_invocation: false\n"])
+def test_install_requires_the_task_scoped_invocation_policy(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     policy: str | None,

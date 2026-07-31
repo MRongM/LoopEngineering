@@ -51,12 +51,12 @@ def test_codex_skill_declares_required_loop_contract() -> None:
     assert 'throw "Loop Engineering install failed"' in body
 
 
-def test_codex_skill_disables_implicit_invocation_with_host_policy() -> None:
+def test_codex_skill_enables_task_scoped_implicit_selection() -> None:
     metadata = yaml.safe_load(
         Path("adapters/codex/agents/openai.yaml").read_text(encoding="utf-8")
     )
 
-    assert metadata == {"policy": {"allow_implicit_invocation": False}}
+    assert metadata == {"policy": {"allow_implicit_invocation": True}}
 
 
 def test_adoption_guide_has_manual_and_installed_paths() -> None:
@@ -74,25 +74,97 @@ def test_adoption_guide_has_manual_and_installed_paths() -> None:
     assert "ln -s" not in text
 
 
-def test_codex_skill_uses_one_manual_short_trigger() -> None:
+def test_codex_skill_requires_the_short_trigger_only_for_new_tasks() -> None:
     skill = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
     adoption = Path("docs/adoption.md").read_text(encoding="utf-8")
+    normalized_readme = " ".join(readme.split())
 
     for text in (skill, readme, adoption):
         assert "$loop-engine" in text
         assert "$loop-engineering" not in text
 
     for required in (
-        "Start this Skill only when the current user message explicitly invokes `$loop-engine`.",
-        "Do not infer activation from the task type, a plain-language mention, or a previous task.",
-        "Every later user message that should continue this Skill must invoke `$loop-engine` again.",
-        "Whenever this Skill pauses, require the user's reply to begin with `$loop-engine`.",
+        "Only explicit `$loop-engine` may start a new Loop task.",
+        "`allow_implicit_invocation: true` is eligibility, not authorization.",
+        "After a task is uniquely bound, later user messages may continue it in natural language.",
+        "Never use implicit selection to start or adopt a task.",
     ):
         assert required in skill
 
-    assert "Include `$loop-engine` again in every later user message" in readme
-    assert "Every user message that should run or continue Loop Engineering" in adoption
+    for obsolete in (
+        "Every later user message that should continue this Skill must invoke",
+        "Whenever this Skill pauses, require the user's reply to begin with",
+    ):
+        assert obsolete not in skill
+
+    assert "Only a new task starts with `$loop-engine`" in normalized_readme
+    assert "只有新任务的首条消息需要 `$loop-engine`" in adoption
+
+
+def test_codex_skill_supports_task_scoped_goal_bound_continuation() -> None:
+    skill = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8")
+    normalized_skill = " ".join(skill.split()).casefold()
+    context = Path("CONTEXT.md").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+    adoption = Path("docs/adoption.md").read_text(encoding="utf-8")
+    manual_adr = Path("docs/adr/0001-require-manual-skill-invocation.md").read_text(
+        encoding="utf-8"
+    )
+    goal_adr = Path("docs/adr/0002-bind-codex-goal-autocontinuation.md").read_text(
+        encoding="utf-8"
+    )
+
+    for required in (
+        "Task-scoped continuation",
+        "Pending Draft binding",
+        "Every newly approved Codex Loop task uses Goal binding by default.",
+        "natural-language clarification, approval, revision, pause recovery, cancellation and feedback",
+        "Do not scan `.loop-runs/`",
+        "`$loop-engine goal-bridge/v1`",
+        "`create_goal`",
+        "`get_goal`",
+        "`update_goal`",
+        "`platform_state`",
+        "`loop-engineering run events`",
+        "Do not set `token_budget` unless the user explicitly supplies it",
+        "unrelated active Goal",
+        "authoritative Loop `DONE`",
+        "Do not call `update_goal` with `blocked`",
+        "`user_cancelled:`",
+    ):
+        assert required.casefold() in normalized_skill
+
+    assert "任务级续跑（Task-scoped Continuation）" in context
+    assert "0002-bind-codex-goal-autocontinuation.md" in manual_adr
+    assert "Only a new Loop task requires explicit invocation" in goal_adr
+    assert "Codex task-scoped continuation" in readme
+    assert "Codex 任务级自然语言续跑" in adoption
+    assert "Goal Token 预算" in adoption
+
+    for text in (skill, context, readme, adoption):
+        assert "Goal automatically grants Loop approval" not in text
+
+    assert "Optional Codex Goal auto-continuation" not in readme
+    assert "可选：Codex Goal 自动续跑" not in adoption
+
+
+def test_codex_skill_accepts_natural_language_approval_without_a_fixed_phrase() -> None:
+    text = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8")
+    _, _, body = text.split("---", 2)
+
+    for required in (
+        "Accept one unambiguous natural-language approval of the latest complete summary.",
+        "Do not require a fixed confirmation subcommand or trigger prefix.",
+        "Questions, partial decisions, conditional replies, stale references and unrelated messages are not approvals.",
+    ):
+        assert required in body
+
+    for obsolete in (
+        "Ask the user to reply with `$loop-engine confirm`",
+        "Accept any unambiguous approval in a user message that begins with `$loop-engine`",
+    ):
+        assert obsolete not in body
 
 
 def test_readme_documents_one_line_managed_install() -> None:

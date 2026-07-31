@@ -1,27 +1,37 @@
 ---
-status: accepted
+status: amended
 ---
 
-# Require manual `$loop-engine` invocation
+# Require explicit `$loop-engine` task start
 
-The Codex Adapter is activated only when the current user message explicitly invokes
-`$loop-engine`. This replaces automatic task-based selection and the former
-`$loop-engineering` trigger because execution governance should be an intentional user
-choice, while the shorter name keeps repeated use practical.
+Only the current user message's explicit `$loop-engine` invocation may start a new Loop
+task. Task semantics, an old trigger, a similar topic, or a previous Run never authorizes
+Intake or adoption.
 
-Codex Skill selection is turn-scoped. Every later user message that should continue the
-Skill must invoke `$loop-engine` again; the adapter does not claim persistent activation
-that the host does not provide.
+The original decision required the trigger on every user-authored turn. ADR 0002 amends
+that part: after the current conversation uniquely binds a Pending Draft, or native Goal
+state plus the append-only ledger uniquely bind an active Run, later messages may continue
+the same task in natural language.
+
+Host selection and Loop authorization remain separate. The host may select the Skill
+implicitly so it can inspect a possible continuation, but a missing, ambiguous, stale,
+unrelated, cancelled or terminal binding must return without Loop mutation.
 
 ## Consequences
 
-- `agents/openai.yaml` sets `policy.allow_implicit_invocation: false`, the Codex host policy
-  that enforces the manual-only boundary.
-- Every user turn that should run the Skill requires explicit invocation.
-- No compatibility alias is retained for `$loop-engineering`.
-- A hidden non-trigger marker lets the previous lifecycle manager revalidate the first
-  update that changes the Skill name; it does not register the former invocation name.
-- The product name, `loop-engineering` CLI, Core protocol, and control-mode rules do not change.
+- `agents/openai.yaml` sets `policy.allow_implicit_invocation: true` so the host can offer
+  a bound continuation to the Adapter.
+- The Adapter admission guard, rather than the host selection flag, enforces the new-task
+  boundary.
+- `$loop-engine` remains the only task-start trigger; no `$loop-engineering` compatibility
+  alias is retained.
+- Natural-language approval still requires one current complete contract summary and an
+  unambiguous decision; it does not grant new scope or permissions.
+- The product name, `loop-engineering` CLI, Core protocol and control modes do not change.
+
+## Follow-up decision
+
+- [ADR 0002: Bind Codex tasks for Goal-backed continuation](0002-bind-codex-goal-autocontinuation.md)
 
 ## Reference
 
