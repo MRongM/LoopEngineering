@@ -4,7 +4,7 @@
 
 Loop Engineering 是面向编码 Agent 的证据门控、可恢复执行协议与工具集。它通过严格合同、追加式账本、风险门禁、新鲜验证证据和独立 Checker，约束 Agent 在明确范围内持续执行，并以可审计事实而不是自然语言声明判定完成。
 
-当前里程碑将 Core Protocol 演进到 0.3.0：新合同默认采用 `autonomous`，同时把 Agent 使用的 Shell CLI 入口统一为 `loop-agent`。
+当前里程碑将 Core Protocol 演进到 0.3.0：删除 `collaborative` 并仅保留 `autonomous`，同时把 Agent 使用的 Shell CLI 入口统一为 `loop-engine`。
 
 ## Core Value
 
@@ -23,9 +23,9 @@ Agent 只能在明确批准且可验证的范围内自主执行，并且只有�
 
 ### Active
 
-- [ ] 发布 Core Protocol 与 Python 包 0.3.0，使 0.3.0 合同省略 `mode` 时默认解析为 `autonomous`
-- [ ] 保留 0.1.0/0.2.0 缺省 `mode` 的 `collaborative` 语义，禁止现有 Run 静默迁移
-- [ ] 将 Agent 执行用的 Shell CLI 入口从 `loop-engineering` 完整替换为 `loop-agent`，不保留旧命令别名
+- [ ] 发布 Core Protocol 与 Python 包 0.3.0，只允许 `autonomous`，并在省略 `mode` 时自动采用该模式
+- [ ] 拒绝所有 `collaborative` 合同与 Run；旧 0.1.0/0.2.0 autonomous 合同继续保留其原有门禁语义
+- [ ] 将 Agent 执行用的 Shell CLI 入口从 `loop-engineering` 完整替换为 `loop-engine`，不保留旧命令别名
 - [ ] 同步协议、模型、模板、生成 Schema、Codex Adapter、生命周期管理器、README、接入文档与兼容性说明
 - [ ] 通过测试先行和完整验证证明模式解析、CLI 安装生命周期、旧协议兼容性及安全门禁未回归
 
@@ -33,8 +33,8 @@ Agent 只能在明确批准且可验证的范围内自主执行，并且只有�
 
 - 产品名、Python 包名或仓库名重命名 — 继续使用 `Loop Engineering` 与 `loop-engineering`
 - Codex Skill 触发词重命名 — 继续使用 `$loop-engine`
-- 为旧 CLI `loop-engineering` 保留兼容别名 — 0.3.0 只暴露 `loop-agent`
-- 将活动的 0.1.0/0.2.0 Run 自动升级到 0.3.0 — 迁移必须显式创建并批准新合同版本
+- 为旧 CLI `loop-engineering` 或拟议的 `loop-agent` 保留兼容别名 — 0.3.0 只暴露 `loop-engine`
+- 转换或恢复 collaborative 合同与 Run — 0.3.0 明确不兼容该模式
 - 削弱合同批准、风险披露、Checker、证据、预算或永久禁止项 — 这些安全不变量保持不变
 - 新增 scheduler、daemon、自动合并或自动部署 — 不属于本里程碑
 
@@ -43,27 +43,28 @@ Agent 只能在明确批准且可验证的范围内自主执行，并且只有�
 - 当前实现为 Loop Engineering 0.2.0，使用 Python 3.12+、Pydantic strict models、PyYAML 与 filelock。
 - Core 保持工具无关；Codex 专有行为位于 `adapters/codex/`。
 - 当前批准设计让 Codex Adapter 在省略模式时采用 `autonomous`，但 Core、通用模板和 JSON Schema 仍默认 `collaborative`。
-- 本里程碑明确取代“Core 默认继续 collaborative”以及“拒绝协议级 Autonomous 默认”的旧局部决策，并通过协议 0.3.0 隔离兼容语义。
-- 当前 Shell CLI 入口为 `loop-engineering`，Adapter 与文档也使用该命令；用户要求统一改为 `loop-agent`。
+- 本里程碑明确取代所有 collaborative 路径以及“拒绝协议级 Autonomous 默认”的旧决策；0.3.0 Core 将拒绝 collaborative 合同和 Run。
+- 当前 Shell CLI 入口为 `loop-engineering`，Adapter 与文档也使用该命令；用户要求统一改为 `loop-engine`。
 - 0.2.0 本地基线验证为 181 个测试通过且 Ruff 无告警；0.3.0 必须保留或提升该验证水平。
 
 ## Constraints
 
-- **协议兼容性**：0.1.0/0.2.0 缺省模式必须继续是 `collaborative`；0.3.0 才能缺省为 `autonomous`。
-- **迁移安全**：活动旧 Run 不得静默升级；目标、权限、风险或合同版本变化仍需完整批准。
+- **协议兼容性**：0.3.0 只接受 autonomous；旧 0.1.0/0.2.0 autonomous 合同可读取，collaborative 合同与 Run 明确不兼容。
+- **迁移安全**：不得把 collaborative Run 静默转换为 autonomous；目标、权限、风险或合同版本变化仍需完整批准。
 - **实现边界**：Core 不得引入 Codex 专有模型；Codex 行为继续留在 Adapter seam。
 - **测试纪律**：生产代码前必须先有失败测试，并保留新鲜 RED→GREEN 证据；不得弱化测试、Gate 或 Schema。
 - **子进程安全**：所有命令继续使用 argv 与 `shell=False`，不得拼接 Shell 命令执行用户数据。
 - **Git 安全**：不得自动合并、部署、强推、改写历史或执行 `git reset --hard`；不得覆盖无关用户修改。
-- **命名边界**：产品与包继续叫 Loop Engineering / `loop-engineering`；仅可执行命令改为 `loop-agent`。
+- **命名边界**：产品与包继续叫 Loop Engineering / `loop-engineering`；仅可执行命令改为 `loop-engine`。
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| 通过 Core Protocol 0.3.0 引入 Autonomous 缺省值 | 避免静默改变 0.1.0/0.2.0 合同的安全语义 | — Pending |
-| 旧协议省略 `mode` 时继续解析为 `collaborative` | 保持现有合同和 Run 的行为兼容性 | — Pending |
-| `loop-agent` 成为唯一 Shell CLI 入口 | 明确区分 Agent 执行命令与产品/包名称 | — Pending |
+| Core Protocol 0.3.0 仅支持 Autonomous | 提供无需模式分支的自主执行 Skill | — Pending |
+| collaborative 合同与 Run 不再兼容 | 用户明确选择彻底移除 collaborative 选项 | — Pending |
+| 旧 0.1.0/0.2.0 autonomous 合同仍可读取 | 只移除 collaborative，不扩大无关兼容性破坏 | — Pending |
+| `loop-engine` 成为唯一 Shell CLI 入口 | 统一 Skill 触发词与 Agent 执行命令的基础名称 | — Pending |
 | 产品名、包名和 `$loop-engine` 触发词保持不变 | 将变更限制在 Core 默认语义和执行命令，避免无关重命名 | — Pending |
 | 安全 Gate、风险绑定、Checker 与证据规则不变 | Autonomous 缺省不能等同于弱化授权或完成标准 | — Pending |
 
