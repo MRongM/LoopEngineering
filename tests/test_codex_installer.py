@@ -117,6 +117,7 @@ def _stub_commands(
     after_pull: Callable[[], None] | None = None,
     uv_returncode: int = 0,
     uv_stderr: str = "",
+    uv_times_out: bool = False,
     cli_version: str = "0.3.0\n",
     legacy_aliases: tuple[str, ...] = (),
     cli_remains_after_uninstall: bool = False,
@@ -139,12 +140,21 @@ def _stub_commands(
 
     def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append((argv, kwargs))
-        assert kwargs == {
-            "capture_output": True,
-            "check": False,
-            "shell": False,
-            "text": True,
-        }
+        if argv[0] == executables["uv"] and argv[1:3] == ["tool", "install"]:
+            assert kwargs == {
+                "capture_output": False,
+                "check": False,
+                "shell": False,
+                "text": True,
+                "timeout": 600,
+            }
+        else:
+            assert kwargs == {
+                "capture_output": True,
+                "check": False,
+                "shell": False,
+                "text": True,
+            }
         if argv[0] == executables["git"]:
             returncode = 0
             stderr = ""
@@ -178,6 +188,8 @@ def _stub_commands(
                 stderr=stderr,
             )
         if argv[0] == executables["uv"]:
+            if argv[1:3] == ["tool", "install"] and uv_times_out:
+                raise subprocess.TimeoutExpired(argv, 600)
             if argv[1:3] == ["tool", "install"] and uv_returncode == 0:
                 cli_state["installed"] = True
             if argv[1:3] == ["tool", "uninstall"] and not cli_remains_after_uninstall:
@@ -297,6 +309,7 @@ def test_install_rejects_checkout_metadata_with_a_legacy_script(
 def test_install_uses_exact_uv_argv_without_a_shell(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     codex_home, repository, script = _checkout(tmp_path)
     manager = _load_manager(script, monkeypatch)
@@ -307,10 +320,11 @@ def test_install_uses_exact_uv_argv_without_a_shell(
         (
             ["/tools/uv", "tool", "install", str(repository)],
             {
-                "capture_output": True,
+                "capture_output": False,
                 "check": False,
                 "shell": False,
                 "text": True,
+                "timeout": 600,
             },
         ),
         (
@@ -323,6 +337,27 @@ def test_install_uses_exact_uv_argv_without_a_shell(
             },
         ),
     ]
+    assert (
+        f"Installing loop-engine executable from loop-engineering distribution at {repository}"
+        in capsys.readouterr().out
+    )
+
+
+def test_install_reports_a_bounded_uv_timeout_and_retains_the_checkout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    codex_home, repository, script = _checkout(tmp_path)
+    manager = _load_manager(script, monkeypatch)
+    _stub_commands(manager, monkeypatch, uv_times_out=True)
+
+    assert manager.main(["install", "--codex-home", str(codex_home)]) == 2
+    assert (
+        "uv tool install timed out after 600 seconds; the Skill checkout was retained"
+        in capsys.readouterr().err
+    )
+    assert repository.exists()
 
 
 def test_install_rejects_the_legacy_skill_marker(

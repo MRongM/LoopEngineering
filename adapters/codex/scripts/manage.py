@@ -18,6 +18,7 @@ OFFICIAL_REPOSITORY = "https://github.com/MRongM/LoopEngineering.git"
 MANAGED_BRANCH = "master"
 PROTOCOL_HEADER = "# Loop Engineering Core Protocol 0.3.0"
 CORE_COMPATIBILITY = "Compatible Core: >=0.3,<0.4"
+INSTALL_TIMEOUT_SECONDS = 600
 ERROR = 2
 CONFIRMATION_REQUIRED = 3
 
@@ -126,13 +127,23 @@ def _executable(name: str) -> str:
     return executable
 
 
-def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
+def _run(
+    argv: list[str],
+    *,
+    capture_output: bool = True,
+    timeout: int | None = None,
+) -> subprocess.CompletedProcess[str]:
+    run_options: dict[str, object] = {
+        "capture_output": capture_output,
+        "shell": False,
+        "text": True,
+    }
+    if timeout is not None:
+        run_options["timeout"] = timeout
     return subprocess.run(
         argv,
-        capture_output=True,
         check=False,
-        shell=False,
-        text=True,
+        **run_options,
     )
 
 
@@ -162,13 +173,29 @@ def _install(repository: Path, *, reinstall: bool = False) -> None:
     if reinstall:
         argv.append("--reinstall")
     argv.append(str(repository))
-    result = _run(argv)
-    if result.returncode != 0:
-        retained = (
-            "the updated Skill checkout was retained"
-            if reinstall
-            else "the Skill checkout was retained"
+    retained = (
+        "the updated Skill checkout was retained"
+        if reinstall
+        else "the Skill checkout was retained"
+    )
+    in_progress = "Reinstalling" if reinstall else "Installing"
+    print(
+        f"{in_progress} {CLI_NAME} executable from "
+        f"{DISTRIBUTION_NAME} distribution at {repository}",
+        flush=True,
+    )
+    try:
+        result = _run(
+            argv,
+            capture_output=False,
+            timeout=INSTALL_TIMEOUT_SECONDS,
         )
+    except subprocess.TimeoutExpired as error:
+        raise LifecycleError(
+            f"uv tool install timed out after {INSTALL_TIMEOUT_SECONDS} seconds; "
+            f"{retained}"
+        ) from error
+    if result.returncode != 0:
         raise LifecycleError(f"uv tool install failed; {retained}")
     _verify_installed_cli()
     action = "Reinstalled" if reinstall else "Installed"

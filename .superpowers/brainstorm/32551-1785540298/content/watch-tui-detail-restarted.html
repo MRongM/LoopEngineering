@@ -1,0 +1,67 @@
+<h2><code>loop-engine run watch</code> 在终端中的显示</h2>
+<p class="subtitle">这是 ANSI 原地刷新的轻量 TUI，不切换到独立全屏程序。</p>
+
+<div class="mockup">
+  <div class="mockup-header">宽终端 · 推荐布局</div>
+  <div class="mockup-body" style="background:#07111f;color:#dbeafe;padding:18px;text-align:left">
+    <pre style="margin:0;font-size:13px;line-height:1.5;white-space:pre-wrap">$ loop-engine run watch ".loop-runs/loop-release-030"
+
+● EXECUTING   loop-release-030                         updated 16:08:42
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Contract  v2 · protocol 0.3.0 · AUTONOMOUS · ✓ authorization bound
+
+ACCEPTANCE EVIDENCE                                      2 / 3 recorded
+  ✓ AC-1  focused tests pass                    VAL-1 passed · current v2
+  ✓ AC-2  CLI exposes loop-engine               VAL-2 passed · current v2
+  ◉ AC-3  release docs converge                 VAL-3 running
+
+BUDGET
+  Iterations  ██████░░░░░░  3 / 6       Elapsed  ████░░░░░░░░  21 / 60m
+  Checker     ██░░░░░░░░░░  1 / 2       No-progress cycles  0 / 2
+
+CURRENT ACTION
+  intent  8f7312…   validator · run VAL-3
+
+RECENT EVENTS
+  16:08:42  intent      run VAL-3
+  16:08:31  transition  executing → verifying
+  16:08:29  result      documentation updated · progress=yes
+  16:07:58  gate        exact file_write allowed
+
+Pending intents  1       Pause reason  —       Checker  REVISE (1 finding)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Refreshing every 1s · Ctrl-C closes this view; the Loop continues</pre>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top:20px">
+  <div class="mockup-header">窄终端 · 自动紧凑布局</div>
+  <div class="mockup-body" style="background:#111827;color:#e5e7eb;padding:18px;text-align:left;max-width:520px">
+    <pre style="margin:0;font-size:13px;line-height:1.5;white-space:pre-wrap">● EXECUTING  loop-release-030
+Contract v2 ✓ authorized
+
+Evidence 2/3
+ ✓ AC-1  VAL-1 passed
+ ✓ AC-2  VAL-2 passed
+ ◉ AC-3  VAL-3 running
+
+Iterations 3/6  ·  Time 21/60m
+Pending 1       ·  Checker REVISE
+
+16:08 intent  run VAL-3
+16:08 result  docs updated
+
+Ctrl-C closes view</pre>
+  </div>
+</div>
+
+<div class="section" style="margin-top:20px">
+  <span class="label">调用方式</span>
+  <pre style="font-size:14px"><code>loop-engine run watch "&lt;run-dir&gt;"</code></pre>
+  <ul>
+    <li>TTY：原地刷新上述视图。</li>
+    <li>管道或重定向：输出一帧纯文本后退出。</li>
+    <li>终态：显示最后一帧并自动退出。</li>
+    <li>只读：不会暂停、继续或改变 Run。</li>
+  </ul>
+</div>

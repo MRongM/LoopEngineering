@@ -1,0 +1,87 @@
+<h2>Loop 执行过程：终端可视化方向</h2>
+<p class="subtitle">请选择最符合日常使用方式的主界面；三种方案都只读，不成为新的授权入口。</p>
+
+<div class="cards">
+  <div class="card" data-choice="snapshot" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:14px;background:#111827;color:#d1fae5;text-align:left">
+      <pre style="margin:0;font-size:12px;line-height:1.45;white-space:pre-wrap">$ loop-engine run inspect .loop-runs/loop-42
+
+LOOP loop-42        VERIFYING
+Contract v2         AUTHORIZED
+
+Acceptance                 2 / 3
+  ✓ AC-1  focused tests
+  ✓ AC-2  scope valid
+  ○ AC-3  docs verified
+
+Budget   iterations 2/6   time 18/60m
+Latest   VAL-2 passed · 14s ago
+Pending  none</pre>
+    </div>
+    <div class="card-body">
+      <h3>A · Shell 快照</h3>
+      <p>一次命令打印当前状态后退出。最适合脚本、CI、日志和复制粘贴。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>零交互、最稳定</li><li>天然支持重定向</li></ul></div>
+        <div class="cons"><h4>限制</h4><ul><li>不会自动刷新</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="watch" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:14px;background:#07121f;color:#bae6fd;text-align:left">
+      <pre style="margin:0;font-size:12px;line-height:1.45;white-space:pre-wrap">$ loop-engine run watch .loop-runs/loop-42
+
+● EXECUTING   loop-42    updated 15:42:08
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Contract v2   ✓ bound authorization
+
+Acceptance                 2 / 3
+  ✓ AC-1  focused tests
+  ✓ AC-2  scope valid
+  ◉ AC-3  running VAL-3…
+
+Iterations  ███░░░  3/6
+Time        ██░░░░  21/60m
+
+15:42:08  intent    run VAL-3
+15:41:51  result    docs updated
+
+Ctrl-C exits · Run continues</pre>
+    </div>
+    <div class="card-body">
+      <h3>B · 实时 Watch（推荐）</h3>
+      <p>ANSI 原地刷新，展示状态、验收、预算和最近事件；非 TTY 自动退化为快照。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>立即获得过程感</li><li>仍适合普通 Shell</li></ul></div>
+        <div class="cons"><h4>限制</h4><ul><li>只提供轻量交互</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="fullscreen" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:14px;background:#18181b;color:#f4f4f5;text-align:left">
+      <pre style="margin:0;font-size:12px;line-height:1.45;white-space:pre-wrap">┌ Loop loop-42 ─────── EXECUTING ┐
+│ Acceptance       │ Timeline    │
+│ ✓ AC-1 tests     │ 15:42 VAL-3 │
+│ ✓ AC-2 scope     │ 15:41 write │
+│ ◉ AC-3 docs      │ 15:40 gate  │
+├──────────────────┴─────────────┤
+│ Evidence                       │
+│ VAL-1 ✓  VAL-2 ✓  VAL-3 …      │
+├────────────────────────────────┤
+│ [e] events [r] risks [q] quit  │
+└────────────────────────────────┘</pre>
+    </div>
+    <div class="card-body">
+      <h3>C · 全屏 TUI</h3>
+      <p>键盘导航、分页、筛选和详情面板，适合长时间观察复杂 Run。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>信息密度最高</li><li>适合多仓库运行</li></ul></div>
+        <div class="cons"><h4>限制</h4><ul><li>实现与跨平台成本最高</li><li>可能引入终端 UI 依赖</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:18px">建议先交付 B，并让同一渲染器支持 A；全屏 TUI 留到真实使用证明需要后再做。</p>
