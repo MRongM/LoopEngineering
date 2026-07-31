@@ -8,6 +8,8 @@ from collections.abc import Sequence
 from pathlib import Path
 
 TOOL_NAME = "loop-engineering"
+CODEX_SKILL_NAME = "loop-engine"
+CODEX_INVOCATION_POLICY = "policy:\n  allow_implicit_invocation: false\n"
 OFFICIAL_REPOSITORY = "https://github.com/MRongM/LoopEngineering.git"
 MANAGED_BRANCH = "master"
 PROTOCOL_HEADER = "# Loop Engineering Core Protocol 0.2.0"
@@ -80,17 +82,28 @@ def _validate_checkout(codex_home: Path) -> Path:
 
     protocol = repository / "PROTOCOL.md"
     skill = repository / "adapters" / "codex" / "SKILL.md"
+    invocation_policy = repository / "adapters" / "codex" / "agents" / "openai.yaml"
     project = repository / "pyproject.toml"
     try:
         protocol_header = protocol.read_text(encoding="utf-8").splitlines()[0]
         skill_text = skill.read_text(encoding="utf-8")
+        invocation_policy_text = invocation_policy.read_text(encoding="utf-8")
         project_data = tomllib.loads(project.read_text(encoding="utf-8"))
     except (IndexError, OSError, tomllib.TOMLDecodeError) as error:
         raise LifecycleError("Skill checkout markers are missing or invalid") from error
     if protocol_header != PROTOCOL_HEADER:
         raise LifecycleError("Skill checkout protocol marker does not match")
-    if "name: loop-engineering" not in skill_text or CORE_COMPATIBILITY not in skill_text:
+    frontmatter_parts = skill_text.split("---", 2)
+    if len(frontmatter_parts) != 3 or frontmatter_parts[0].strip():
         raise LifecycleError("Skill checkout adapter marker does not match")
+    skill_frontmatter = frontmatter_parts[1].splitlines()
+    if (
+        f"name: {CODEX_SKILL_NAME}" not in skill_frontmatter
+        or CORE_COMPATIBILITY not in frontmatter_parts[2]
+    ):
+        raise LifecycleError("Skill checkout adapter marker does not match")
+    if invocation_policy_text != CODEX_INVOCATION_POLICY:
+        raise LifecycleError("Skill checkout invocation policy does not match")
     if project_data.get("project", {}).get("name") != TOOL_NAME:
         raise LifecycleError("Skill checkout package marker does not match")
     return repository

@@ -10,6 +10,8 @@ from uuid import uuid4
 import pytest
 
 MANAGER = Path("adapters/codex/scripts/manage.py")
+SKILL = Path("adapters/codex/SKILL.md")
+OPENAI_METADATA = Path("adapters/codex/agents/openai.yaml")
 OFFICIAL_REPOSITORY = "https://github.com/MRongM/LoopEngineering.git"
 
 
@@ -31,10 +33,10 @@ def _checkout(
         "# Loop Engineering Core Protocol 0.2.0\n",
         encoding="utf-8",
     )
-    (repository / "adapters" / "codex" / "SKILL.md").write_text(
-        "---\nname: loop-engineering\n---\n\nCompatible Core: >=0.2,<0.3\n",
-        encoding="utf-8",
-    )
+    shutil.copy2(SKILL, repository / "adapters" / "codex" / "SKILL.md")
+    openai_metadata = repository / "adapters" / "codex" / "agents" / "openai.yaml"
+    openai_metadata.parent.mkdir()
+    shutil.copy2(OPENAI_METADATA, openai_metadata)
     (repository / "pyproject.toml").write_text(
         '[project]\nname = "loop-engineering"\n',
         encoding="utf-8",
@@ -165,6 +167,57 @@ def test_install_uses_exact_uv_argv_without_a_shell(
             },
         )
     ]
+
+
+def test_install_rejects_the_legacy_skill_marker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home, repository, script = _checkout(tmp_path)
+    (repository / "adapters" / "codex" / "SKILL.md").write_text(
+        "---\nname: loop-engineering\n---\n\nCompatible Core: >=0.2,<0.3\n",
+        encoding="utf-8",
+    )
+    manager = _load_manager(script, monkeypatch)
+    calls = _stub_commands(manager, monkeypatch)
+
+    assert manager.main(["install", "--codex-home", str(codex_home)]) == 2
+    assert calls == []
+
+
+def test_install_rejects_a_skill_name_found_only_outside_frontmatter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home, repository, script = _checkout(tmp_path)
+    (repository / "adapters" / "codex" / "SKILL.md").write_text(
+        "---\nname: wrong-name\n---\n\nname: loop-engine\n\nCompatible Core: >=0.2,<0.3\n",
+        encoding="utf-8",
+    )
+    manager = _load_manager(script, monkeypatch)
+    calls = _stub_commands(manager, monkeypatch)
+
+    assert manager.main(["install", "--codex-home", str(codex_home)]) == 2
+    assert calls == []
+
+
+@pytest.mark.parametrize("policy", [None, "policy:\n  allow_implicit_invocation: true\n"])
+def test_install_requires_the_manual_invocation_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    policy: str | None,
+) -> None:
+    codex_home, repository, script = _checkout(tmp_path)
+    metadata = repository / "adapters" / "codex" / "agents" / "openai.yaml"
+    if policy is None:
+        metadata.unlink()
+    else:
+        metadata.write_text(policy, encoding="utf-8")
+    manager = _load_manager(script, monkeypatch)
+    calls = _stub_commands(manager, monkeypatch)
+
+    assert manager.main(["install", "--codex-home", str(codex_home)]) == 2
+    assert calls == []
 
 
 @pytest.mark.parametrize("failure", ["wrong-path", "missing-marker"])
@@ -354,6 +407,40 @@ def test_update_fast_forwards_official_master_and_reinstalls_cli(
             "FETCH_HEAD",
         ],
         ["/tools/uv", "tool", "install", "--reinstall", str(repository)],
+    ]
+
+
+def test_legacy_manager_revalidates_the_first_short_name_update(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home, repository, script = _checkout(tmp_path)
+    skill = repository / "adapters" / "codex" / "SKILL.md"
+    skill.write_text(
+        "---\nname: loop-engineering\n---\n\nCompatible Core: >=0.2,<0.3\n",
+        encoding="utf-8",
+    )
+    manager = _load_manager(script, monkeypatch)
+
+    def legacy_validate_checkout(_: Path) -> Path:
+        if "name: loop-engineering" not in skill.read_text(encoding="utf-8"):
+            raise manager.LifecycleError("Skill checkout adapter marker does not match")
+        return repository
+
+    monkeypatch.setattr(manager, "_validate_checkout", legacy_validate_checkout)
+
+    def apply_short_name_update() -> None:
+        shutil.copy2(SKILL, skill)
+
+    calls = _stub_commands(manager, monkeypatch, after_pull=apply_short_name_update)
+
+    assert manager.main(["update", "--codex-home", str(codex_home)]) == 0
+    assert calls[-1][0] == [
+        "/tools/uv",
+        "tool",
+        "install",
+        "--reinstall",
+        str(repository),
     ]
 
 

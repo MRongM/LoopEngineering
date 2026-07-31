@@ -9,9 +9,12 @@ def test_codex_skill_declares_required_loop_contract() -> None:
     _, frontmatter, body = text.split("---", 2)
     metadata = yaml.safe_load(frontmatter)
 
-    assert metadata["name"] == "loop-engineering"
-    assert "state-changing" in metadata["description"]
-    assert "install or uninstall" in metadata["description"]
+    assert set(metadata) == {"name", "description"}
+    assert metadata["name"] == "loop-engine"
+    assert metadata["description"] == (
+        "Run evidence-gated Loop Engineering workflows and manage the Codex adapter lifecycle."
+    )
+    assert not metadata["description"].startswith("Use when")
     assert "Compatible Core: >=0.2,<0.3" in body
     for required in (
         "collaborative",
@@ -48,18 +51,48 @@ def test_codex_skill_declares_required_loop_contract() -> None:
     assert 'throw "Loop Engineering install failed"' in body
 
 
+def test_codex_skill_disables_implicit_invocation_with_host_policy() -> None:
+    metadata = yaml.safe_load(
+        Path("adapters/codex/agents/openai.yaml").read_text(encoding="utf-8")
+    )
+
+    assert metadata == {"policy": {"allow_implicit_invocation": False}}
+
+
 def test_adoption_guide_has_manual_and_installed_paths() -> None:
     text = Path("docs/adoption.md").read_text(encoding="utf-8")
     assert "立即可用：人工引用规范" in text
     assert "托管安装与卸载：CLI + Codex Skill" in text
     assert "loop-engineering project init" in text
-    assert "$loop-engineering" in text
+    assert "$loop-engine" in text
+    assert "$loop-engineering" not in text
     assert "manage.py\" install --codex-home" in text
     assert "manage.py\" uninstall --codex-home" in text
     assert "py -3.12" in text
     assert 'mkdir -p "$codex_home/skills" && \\' in text
     assert 'throw "Loop Engineering install failed"' in text
     assert "ln -s" not in text
+
+
+def test_codex_skill_uses_one_manual_short_trigger() -> None:
+    skill = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+    adoption = Path("docs/adoption.md").read_text(encoding="utf-8")
+
+    for text in (skill, readme, adoption):
+        assert "$loop-engine" in text
+        assert "$loop-engineering" not in text
+
+    for required in (
+        "Start this Skill only when the current user message explicitly invokes `$loop-engine`.",
+        "Do not infer activation from the task type, a plain-language mention, or a previous task.",
+        "Every later user message that should continue this Skill must invoke `$loop-engine` again.",
+        "Whenever this Skill pauses, require the user's reply to begin with `$loop-engine`.",
+    ):
+        assert required in skill
+
+    assert "Include `$loop-engine` again in every later user message" in readme
+    assert "Every user message that should run or continue Loop Engineering" in adoption
 
 
 def test_readme_documents_one_line_managed_install() -> None:

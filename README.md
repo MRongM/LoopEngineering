@@ -41,7 +41,8 @@ if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
 ```
 
 After the command reports the version, start a new Codex session and invoke
-`$loop-engineering`.
+`$loop-engine`. The Skill is manual-only and is never selected from task semantics alone.
+Include `$loop-engine` again in every later user message that should continue the Skill.
 
 ## Update the Skill from a shell
 

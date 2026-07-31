@@ -1,11 +1,20 @@
 ---
-name: loop-engineering
-description: Use when a state-changing engineering task needs a collaborative or autonomous evidence-gated coding loop, or when the user asks how to install or uninstall the Loop Engineering Codex adapter.
+name: loop-engine
+description: Run evidence-gated Loop Engineering workflows and manage the Codex adapter lifecycle.
 ---
 
 # Loop Engineering for Codex
 
 Compatible Core: >=0.2,<0.3
+<!-- Legacy lifecycle updater compatibility: name: loop-engineering -->
+
+## Manual invocation
+
+Start this Skill only when the current user message explicitly invokes `$loop-engine`.
+Do not infer activation from the task type, a plain-language mention, or a previous task.
+Every later user message that should continue this Skill must invoke `$loop-engine` again.
+Whenever this Skill pauses, require the user's reply to begin with `$loop-engine`.
+The trigger name does not rename Loop Engineering, the `loop-engineering` CLI, or Core.
 
 ## Adapter lifecycle
 
@@ -109,6 +118,8 @@ content.
    `risk_id`, `kind`, exact target, `impact`, `worst_case`, `recovery` and `evidence`.
 8. Ask for one pre-execution approval of that complete summary. Clarifying missing
    information is not approval, and separate partial answers must not be combined into it.
+   Ask the user to reply with `$loop-engine confirm` so the approval turn explicitly
+   reactivates this Skill.
 9. After approval, run
    `loop-engineering run create "<contract-path>" --project "<project-root>"`,
    retain the created `intake` snapshot, record the discovering/drafting/awaiting

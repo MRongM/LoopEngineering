@@ -112,14 +112,16 @@ loop-engineering project init --root "/work/acme-orders" --update-gitignore
 在项目根 `AGENTS.md` 中加入：
 
 ```markdown
-For every state-changing engineering task, invoke $loop-engineering.
+Never invoke Loop Engineering automatically.
+Only a current-message $loop-engine invocation starts a new Loop task.
+Every user message that should run or continue Loop Engineering must include $loop-engine.
 Require an approved Loop Contract before mutation and evidence before DONE.
 ```
 
 ### 5. 发起任务
 
 ```text
-$loop-engineering
+$loop-engine
 控制模式：autonomous
 目标：修复订单重复提交问题
 验收：先复现失败，再证明修复；相关回归测试通过
@@ -138,6 +140,8 @@ Agent 必须先展示 Loop Contract；Autonomous 契约还必须用一个风险�
 影响、最坏结果和恢复方式。一次批准后，运行状态位于：
 `/work/acme-orders/.loop-runs/loop-example-001/`。契约内已接受风险不再逐项确认；
 新目标、权限或风险会生成完整契约修订。平台自身的强制审批仍可能暂停执行。
+后续批准或反馈消息若要继续该 Skill，也必须再次显式写出 `$loop-engine`，例如
+`$loop-engine 确认`。
 
 ### 7. 验收交付
 
