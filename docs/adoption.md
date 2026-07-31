@@ -28,55 +28,71 @@ Git 权限：允许创建隔离分支、原子提交、推送和 PR；禁止自�
 先只读调查并起草 Loop Contract，等待我明确批准后再执行。
 ```
 
-## 实现完成后：CLI + Codex Skill
+## 托管安装与卸载：CLI + Codex Skill
 
 ### 0. 检查前置条件
 
 - Python 3.12–3.14。
 - `uv` 与 Git 可用。
 - 只有创建 GitHub PR 时才需要已认证的 `gh` CLI。
-- 本地已检出 LoopEngineering；以下 Unix 示例路径为 `/opt/LoopEngineering`，
-  目标项目示例路径为 `/work/acme-orders`，请替换为自己的绝对路径。
+- 托管安装固定使用 `<CODEX_HOME>/skills/loop-engineering`；未设置
+  `CODEX_HOME` 时默认使用 `~/.codex`。
+- 目标项目示例路径为 `/work/acme-orders`，请替换为自己的绝对路径。
 
-### 1. 安装 CLI
+生命周期管理器同时管理完整 Skill 检出和 CLI。它不覆盖已有目录、不使用
+符号链接，也不会在卸载失败时继续删除 Skill。
 
-开发检出：
-
-```bash
-uv tool install --editable "/opt/LoopEngineering"
-```
-
-发布 `v0.1.0` 标签后：
+### 1. Unix 托管安装
 
 ```bash
-uv tool install "git+https://github.com/MRongM/LoopEngineering.git@v0.1.0"
-```
-
-验证：
-
-```bash
+codex_home="${CODEX_HOME:-$HOME/.codex}"
+skill_dir="$codex_home/skills/loop-engineering"
+mkdir -p "$codex_home/skills" && \
+git clone --depth 1 --branch master "https://github.com/MRongM/LoopEngineering.git" "$skill_dir" && \
+python3 "$skill_dir/adapters/codex/scripts/manage.py" install --codex-home "$codex_home" && \
 loop-engineering --version
 ```
 
-预期输出：`0.1.0`。
+预期输出：`0.1.0`。创建新的 Codex 会话以重新发现 Skill。
 
-### 2. 安装 Codex Skill
-
-将仓库内 `adapters/codex` 链接到 Codex Skills 目录。目标路径必须由用户明确指定：
+卸载前先切换到 Skill 目录之外。`--yes` 只确认删除经过校验的精确托管目录；
+如果仓库存在修改、未跟踪或忽略文件，管理器会拒绝删除：
 
 ```bash
-mkdir -p "/Users/alice/.codex/skills"
-ln -s "/opt/LoopEngineering/adapters/codex" "/Users/alice/.codex/skills/loop-engineering"
+codex_home="${CODEX_HOME:-$HOME/.codex}"
+skill_dir="$codex_home/skills/loop-engineering"
+python3 "$skill_dir/adapters/codex/scripts/manage.py" uninstall --codex-home "$codex_home" --yes
 ```
 
-如果目标已存在，先检查其来源，不要覆盖。创建新 Codex 会话以重新发现 Skill。
+CLI 已不存在时，管理器仍可清理完整且干净的 Skill 检出；其他 `uv` 错误会保留
+Skill 目录以便排查。卸载后创建新的 Codex 会话。
 
-Windows PowerShell：
+### 2. Windows PowerShell 托管安装与卸载
+
+安装：
 
 ```powershell
-New-Item -ItemType Directory -Force -Path "C:/Users/Alice/.codex/skills"
-New-Item -ItemType SymbolicLink -Path "C:/Users/Alice/.codex/skills/loop-engineering" -Target "C:/Tools/LoopEngineering/adapters/codex"
+$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
+$skillDir = Join-Path $codexHome "skills/loop-engineering"
+$ErrorActionPreference = "Stop"
+New-Item -ItemType Directory -Force -Path (Join-Path $codexHome "skills") | Out-Null
+git clone --depth 1 --branch master "https://github.com/MRongM/LoopEngineering.git" "$skillDir"
+if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
+py -3.12 "$skillDir/adapters/codex/scripts/manage.py" install --codex-home "$codexHome"
+if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
+loop-engineering --version
+if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
 ```
+
+卸载前将 PowerShell 当前目录切换到 Skill 检出之外，然后执行：
+
+```powershell
+$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
+$skillDir = Join-Path $codexHome "skills/loop-engineering"
+py -3.12 "$skillDir/adapters/codex/scripts/manage.py" uninstall --codex-home "$codexHome" --yes
+```
+
+不要用手工递归删除替代管理器。如果管理器拒绝执行，应先检查并保留它报告的本地状态。
 
 ### 3. 初始化目标项目
 

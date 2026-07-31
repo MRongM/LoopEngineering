@@ -13,29 +13,60 @@ approved Loop Contract before any mutation:
 
 ## Install in Codex
 
-### One-line install
+The managed flow requires Python 3.12+, Git and `uv`. It clones the complete
+repository to the canonical Skill directory. It installs the CLI through the
+checked-in lifecycle manager and never overwrites an existing destination.
 
-This command downloads the complete repository directly into the Codex Skills
-directory and installs the CLI. Codex discovers `adapters/codex/SKILL.md` recursively,
-so do not create a symlink or copy another `SKILL.md` to the repository root. The
-clone safely stops if the destination already exists.
+### Unix one-line install
 
-```bash
-mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills" && git clone --depth 1 --branch master "https://github.com/MRongM/LoopEngineering.git" "${CODEX_HOME:-$HOME/.codex}/skills/loop-engineering" && uv tool install "${CODEX_HOME:-$HOME/.codex}/skills/loop-engineering"
-```
-
-Start a new Codex turn, invoke `$loop-engineering`, and choose `collaborative` or
-`autonomous` for that task.
-
-### One-line uninstall
-
-This command first verifies the exact cloned Skill marker, then uninstalls the CLI
-and removes only that repository directory. Inspect the resolved path before running
-the command if `CODEX_HOME` is customized.
+Run from any directory:
 
 ```bash
-skill_dir="${CODEX_HOME:-$HOME/.codex}/skills/loop-engineering"; test -f "$skill_dir/adapters/codex/SKILL.md" && uv tool uninstall "loop-engineering" && command rm -r -- "$skill_dir"
+codex_home="${CODEX_HOME:-$HOME/.codex}"; skill_dir="$codex_home/skills/loop-engineering"; mkdir -p "$codex_home/skills" && git clone --depth 1 --branch master "https://github.com/MRongM/LoopEngineering.git" "$skill_dir" && python3 "$skill_dir/adapters/codex/scripts/manage.py" install --codex-home "$codex_home" && loop-engineering --version
 ```
+
+### Windows PowerShell install
+
+```powershell
+$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
+$skillDir = Join-Path $codexHome "skills/loop-engineering"
+$ErrorActionPreference = "Stop"
+New-Item -ItemType Directory -Force -Path (Join-Path $codexHome "skills") | Out-Null
+git clone --depth 1 --branch master "https://github.com/MRongM/LoopEngineering.git" "$skillDir"
+if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
+py -3.12 "$skillDir/adapters/codex/scripts/manage.py" install --codex-home "$codexHome"
+if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
+loop-engineering --version
+if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
+```
+
+After the command reports the version, start a new Codex session and invoke
+`$loop-engineering`.
+
+## Uninstall from Codex
+
+First change to a directory outside the Skill checkout. The manager requires explicit
+`--yes`, refuses dirty or symlinked checkouts (including linked parent directories) and
+local-only Git state, validates repository markers, and keeps the Skill directory when an
+unexpected CLI uninstall error occurs. It accepts an already absent CLI so a partial
+installation can still be cleaned up safely.
+
+### Unix one-line uninstall
+
+```bash
+codex_home="${CODEX_HOME:-$HOME/.codex}"; skill_dir="$codex_home/skills/loop-engineering"; python3 "$skill_dir/adapters/codex/scripts/manage.py" uninstall --codex-home "$codex_home" --yes
+```
+
+### Windows PowerShell uninstall
+
+```powershell
+$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
+$skillDir = Join-Path $codexHome "skills/loop-engineering"
+py -3.12 "$skillDir/adapters/codex/scripts/manage.py" uninstall --codex-home "$codexHome" --yes
+```
+
+Start a new Codex session after removal. Do not substitute a manual recursive delete;
+if the manager refuses the checkout, inspect and preserve the reported local state.
 
 ## Safety boundary
 
@@ -48,7 +79,7 @@ force-push, history rewrite or implicit production access. Runtime state under
 ```bash
 uv sync --dev
 uv run pytest -q
-uv run ruff check "src" "tests"
+uv run ruff check "src" "tests" "adapters/codex/scripts"
 uv build
 ```
 
