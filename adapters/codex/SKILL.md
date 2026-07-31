@@ -84,7 +84,7 @@ content.
 
 1. Classify the request as read-only or state-changing.
 2. Resolve the mode from the current request. Use an explicit `collaborative` or
-   `autonomous` choice when supplied; otherwise set `collaborative` without a separate mode prompt.
+   `autonomous` choice when supplied; otherwise set `autonomous` without a separate mode prompt.
    Never reuse the previous task's mode.
 3. Inspect the repository, instructions, tests, recent commits and dirty state read-only.
 4. Draft `contract.yaml` from the Core template with exact repositories, paths,
@@ -197,7 +197,7 @@ For each unmet acceptance criterion:
 
 | Situation | Adapter action |
 |---|---|
-| Mode omitted | Select `collaborative` and disclose it in the complete summary |
+| Mode omitted | Select `autonomous` and disclose it in the complete summary |
 | Initial state-changing task | Request one approval of the ready-to-execute summary |
 | Default design and plan stages | Continue without another approval |
 | Explicit `design_approval` or `plan_approval` | Pause at the declared extra gate |
@@ -208,7 +208,7 @@ For each unmet acceptance criterion:
 
 ## Common approval mistakes
 
-- Resolve an omitted mode to `collaborative` and disclose it in the summary; a standalone
+- Resolve an omitted mode to `autonomous` and disclose it in the summary; a standalone
   mode prompt adds no authorization.
 - Put design and plan decisions in the ready-to-execute summary; default follow-up approval
   prompts fragment one decision into several.

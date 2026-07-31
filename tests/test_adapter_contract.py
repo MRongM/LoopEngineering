@@ -123,6 +123,44 @@ def test_codex_skill_uses_one_default_pre_execution_approval() -> None:
         assert obsolete not in body
 
 
+def test_codex_skill_defaults_omitted_mode_to_autonomous() -> None:
+    text = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8")
+    _, _, body = text.split("---", 2)
+
+    for required in (
+        "Use an explicit `collaborative` or\n   `autonomous` choice when supplied; otherwise set `autonomous`",
+        "| Mode omitted | Select `autonomous` and disclose it in the complete summary |",
+        "Resolve an omitted mode to `autonomous` and disclose it in the summary",
+    ):
+        assert required in body
+
+    for obsolete in (
+        "otherwise set `collaborative` without a separate mode prompt",
+        "| Mode omitted | Select `collaborative` and disclose it in the complete summary |",
+        "Resolve an omitted mode to `collaborative` and disclose it in the summary",
+    ):
+        assert obsolete not in body
+
+
+def test_adapter_default_design_preserves_the_core_compatibility_fallback() -> None:
+    current = Path(
+        "docs/superpowers/specs/2026-07-31-codex-autonomous-default-design.md"
+    ).read_text(encoding="utf-8")
+    protocol_design = Path(
+        "docs/superpowers/specs/2026-07-30-loop-engineering-protocol-design.md"
+    ).read_text(encoding="utf-8")
+    approval_design = Path(
+        "docs/superpowers/specs/2026-07-31-single-execution-approval-design.md"
+    ).read_text(encoding="utf-8")
+    adoption = Path("docs/adoption.md").read_text(encoding="utf-8")
+
+    assert "- 状态：用户已批准" in current
+    for legacy_design in (protocol_design, approval_design):
+        assert "2026-07-31-codex-autonomous-default-design.md" in legacy_design
+    assert "未显式指定模式时默认 `autonomous`" in adoption
+    assert "Core 对缺少 `mode` 的合同仍默认 `collaborative`" in adoption
+
+
 def test_codex_skill_keeps_control_files_inside_target_project() -> None:
     text = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8")
     _, _, body = text.split("---", 2)

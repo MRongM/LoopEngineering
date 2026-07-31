@@ -11,6 +11,10 @@
 6. 明确批准后再允许 Agent 修改代码。
 7. 最终只接受包含测试证据、Checker 结论和 Git/PR 状态的报告。
 
+Codex Adapter 未显式指定模式时默认 `autonomous`；用户显式指定
+`collaborative` 或 `autonomous` 时始终以用户选择为准。Core 对缺少 `mode` 的合同仍默认 `collaborative`。
+因此，该兼容路径不会被 Adapter 的缺省行为静默升级。
+
 可直接使用以下任务模板：
 
 ```text

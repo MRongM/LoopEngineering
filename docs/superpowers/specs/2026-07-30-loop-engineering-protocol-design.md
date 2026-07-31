@@ -7,6 +7,8 @@
 - 首版任务来源：仅用户显式发起
 - 当前协议版本：`0.2.0`
 - 规范仓库：`git@github.com:MRongM/LoopEngineering.git`
+- Codex Adapter 缺省模式后续决策：由
+  `2026-07-31-codex-autonomous-default-design.md` 取代；本文其他决策继续有效
 
 ## 1. 背景
 

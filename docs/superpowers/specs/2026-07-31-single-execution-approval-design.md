@@ -5,6 +5,8 @@
 - 适用范围：Codex Adapter 的任务准入与执行前人工门禁
 - 当前基线：Loop Engineering Core Protocol 0.2.0
 - 后续决策：Autonomous 风险门由 `2026-07-31-autonomous-single-risk-acceptance-design.md` 取代
+- Codex Adapter 缺省模式后续决策：由
+  `2026-07-31-codex-autonomous-default-design.md` 取代；本文其他决策继续有效
 
 ## 1. 问题
 
