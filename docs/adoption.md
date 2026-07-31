@@ -53,7 +53,7 @@ python3 "$skill_dir/adapters/codex/scripts/manage.py" install --codex-home "$cod
 loop-engineering --version
 ```
 
-预期输出：`0.1.0`。创建新的 Codex 会话以重新发现 Skill。
+预期输出：`0.2.0`。创建新的 Codex 会话以重新发现 Skill。
 
 卸载前先切换到 Skill 目录之外。`--yes` 只确认删除经过校验的精确托管目录；
 如果仓库存在修改、未跟踪或忽略文件，管理器会拒绝删除：
@@ -124,8 +124,10 @@ Git：允许创建分支、提交、推送和 PR
 
 ### 6. 批准并观察
 
-Agent 必须先展示 Loop Contract。批准后，运行状态位于：
-`/work/acme-orders/.loop-runs/loop-example-001/`。自动模式只在终态或安全门禁暂停。
+Agent 必须先展示 Loop Contract；Autonomous 契约还必须用一个风险表披露精确操作、
+影响、最坏结果和恢复方式。一次批准后，运行状态位于：
+`/work/acme-orders/.loop-runs/loop-example-001/`。契约内已接受风险不再逐项确认；
+新目标、权限或风险会生成完整契约修订。平台自身的强制审批仍可能暂停执行。
 
 ### 7. 验收交付
 

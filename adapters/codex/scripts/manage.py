@@ -8,8 +8,8 @@ from collections.abc import Sequence
 from pathlib import Path
 
 TOOL_NAME = "loop-engineering"
-PROTOCOL_HEADER = "# Loop Engineering Core Protocol 0.1.0"
-CORE_COMPATIBILITY = "Compatible Core: >=0.1,<0.2"
+PROTOCOL_HEADER = "# Loop Engineering Core Protocol 0.2.0"
+CORE_COMPATIBILITY = "Compatible Core: >=0.2,<0.3"
 ERROR = 2
 CONFIRMATION_REQUIRED = 3
 

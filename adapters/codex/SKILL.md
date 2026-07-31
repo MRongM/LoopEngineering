@@ -5,7 +5,7 @@ description: Use when a state-changing engineering task needs a collaborative or
 
 # Loop Engineering for Codex
 
-Compatible Core: >=0.1,<0.2
+Compatible Core: >=0.2,<0.3
 
 ## Adapter lifecycle
 
@@ -59,7 +59,7 @@ every existing configured instruction file, all applicable `AGENTS.md`, and the
 approved Loop Contract before modifying state.
 
 Resolve `PROTOCOL.md` from the LoopEngineering repository containing this Skill.
-If it is absent or its version does not satisfy `>=0.1,<0.2`, stop instead of
+If it is absent or its version does not satisfy `>=0.2,<0.3`, stop instead of
 silently falling back.
 
 ## Hard gate
@@ -83,20 +83,28 @@ is removed after the approved contract is persisted.
 4. Draft `contract.yaml` from the Core template with exact repositories, paths,
    acceptance criteria, argv validation, budget, permissions and Git targets. For
    nontrivial work, include the key design decisions and the minimal implementation plan.
+   List every planned dangerous, production, sensitive-data and Git mutation in
+   `authorized_operations` before asking for approval.
+   Every `authorized_operations` entry needs `risk_id`, `kind`, `repository_id`,
+   exact `target`, `risk_level`, `impact`, `worst_case`, `recovery` and `evidence`.
    Keep the unapproved draft in an ephemeral temporary directory, not the target project.
-5. Use `contract_approval` and any required `final_acceptance`; do not add `design_approval` or `plan_approval` by default. Preserve either extra gate when
-   the current user instruction, project rules or an existing contract explicitly requires it.
+5. Always use `contract_approval`; do not add `design_approval` or `plan_approval` by default.
+   Add `final_acceptance` for collaborative mode. Autonomous `0.2.0` does not add `final_acceptance` based on risk level; preserve any extra gate explicitly required by
+   the current user instruction, project rules or an existing contract.
 6. Run `loop-engineering contract validate "<contract-path>"`.
 7. Present one `Ready-to-execute Loop Contract` summary in this order: mode and
    objective; in/out of scope; acceptance criteria and validation; key design and
    implementation plan; risk, permissions, exact Git targets and budget; preauthorized
-   actions, remaining pause conditions and stop conditions.
+   actions, remaining pause conditions and stop conditions. In autonomous mode, label
+   the risk section `Autonomous Risk Acceptance` and show one table containing each
+   `risk_id`, `kind`, exact target, `impact`, `worst_case`, `recovery` and `evidence`.
 8. Ask for one pre-execution approval of that complete summary. Clarifying missing
    information is not approval, and separate partial answers must not be combined into it.
 9. After approval, run
    `loop-engineering run create "<contract-path>" --project "<project-root>"`,
    retain the created `intake` snapshot, record the discovering/drafting/awaiting
-   transitions and `contract_approval` with `loop-engineering run approval`, then
+   transitions and `contract_approval` with `loop-engineering run approval`. Core binds
+   that event to the current contract version, SHA-256 and accepted risk IDs. Then
    advance through designing or planning toward execution without another approval
    unless an explicit extra gate applies.
 
@@ -109,13 +117,19 @@ For each unmet acceptance criterion:
    a new causal hypothesis before another action. Otherwise choose one smallest
    verifiable increment.
 2. Serialize the exact ActionRequest and run
-   `loop-engineering gate check "<contract-path>" "<request-json>"`.
-   A `pause` decision returns the complete professional confirmation text; show
-   it verbatim and wait for an explicit “是”“确认” or “继续”. Record the human
-   approval with `loop-engineering run approval "<run-dir>" --actor user --gate
-   dangerous_action --decision approve --summary "approved exact action"`; only an
-   approval continues. Use `--decision reject` for rejection. Record a policy `deny`
-   as rejected and never execute it.
+   `loop-engineering gate check "<run-dir>" "<request-json>"`.
+   Handle the returned decision exactly:
+   - `allow`: continue without another human confirmation.
+   - `pause` with `required_gate=contract_revision`: add the new exact target,
+     permission and full risk disclosure to the next contract version, then request
+     one revised complete-summary approval; do not record `dangerous_action` for this route.
+   - `pause` with `required_gate=contract_approval`: the current bound approval is
+     missing or stale; return to the complete contract approval instead of showing an
+     isolated risk prompt.
+   - `pause` with `required_gate=dangerous_action`: this is a collaborative or legacy
+     gate. Show the returned professional confirmation and record the explicit decision
+     with `loop-engineering run approval`.
+   - `deny`: record the rejection and never execute the operation.
 3. Immediately before every approved external state change, run
    `loop-engineering run intent` with the exact action and target.
 4. Make the change without touching unrelated user work.
@@ -156,8 +170,11 @@ For each unmet acceptance criterion:
   including its key design and plan. Continue through designing, planning and ordinary
   implementation inside that contract; pause for a new dangerous action, a material
   contract change, an explicit extra gate, or final acceptance before DONE.
-- `autonomous`: after the same contract approval, continue inside the approved contract
-  until DONE, BLOCKED, BUDGET_EXHAUSTED or a hard human gate. Low/medium-risk autonomous work may reach DONE without final acceptance; high-risk work still requires it.
+- `autonomous`: the one pre-execution approval accepts every precisely disclosed risk.
+  Continue through low, medium and high-risk operations—including exact
+  `production_access` and `sensitive_data` entries—until DONE, BLOCKED,
+  BUDGET_EXHAUSTED, contract revision, or a platform or external-service hard gate.
+  Risk level alone never creates another human gate or final acceptance.
 - The user may downgrade to collaborative at any time. Upgrading requires explicit approval.
 - A material target, scope, evidence, dangerous permission or budget change pauses the
   run, increments `contract_version`, re-enters contract_drafting/awaiting_approval,
@@ -175,8 +192,10 @@ For each unmet acceptance criterion:
 | Initial state-changing task | Request one approval of the ready-to-execute summary |
 | Default design and plan stages | Continue without another approval |
 | Explicit `design_approval` or `plan_approval` | Pause at the declared extra gate |
-| New scope, permission or dangerous action | Revise the contract or run the exact safety gate |
-| Collaborative or high-risk completion | Require final acceptance |
+| Autonomous exact disclosed risk | Continue from the bound contract approval |
+| Autonomous new scope, permission or risk | Request one revised complete-summary approval |
+| Collaborative dangerous action | Run the exact `dangerous_action` gate |
+| Collaborative completion | Require final acceptance |
 
 ## Common approval mistakes
 
@@ -186,8 +205,12 @@ For each unmet acceptance criterion:
   prompts fragment one decision into several.
 - Treat scope questions as information gathering and the complete-summary response as
   authorization; never infer approval from partial answers.
-- Keep emergent-danger and final-acceptance gates distinct from the single pre-execution
-  approval; reducing prompt count does not broaden permission.
+- In Autonomous `0.2.0`, treat an emergent danger as contract scope change and bundle it
+  into one revision approval; a standalone danger prompt would recreate the duplicate gate.
+- Do not treat a contract file by itself as proof of risk acceptance. Use the run-backed
+  gate check so the current hash and accepted risk IDs are verified.
+- A platform or external-service hard gate is outside Loop authorization and may still
+  require user action; never claim the adapter can bypass it.
 
 ## Completion
 
@@ -210,5 +233,6 @@ intent IDs, a paused state, or a required contract gate without an approval even
 Populate evidence only from validator result events returned by
 `loop-engineering run events "<run-dir>"`.
 
+The permanent deny list is force-push, history rewriting, reset --hard, automatic merge and automatic deployment.
 不得自动合并或部署。不得强推、改写历史、执行 `git reset --hard`、泄露秘密，
 或通过删除/弱化测试制造成功。

@@ -9,7 +9,7 @@ from loop_engineering.paths import normalized_relative
 
 
 class ProjectConfig(StrictModel):
-    protocol_constraint: Literal[">=0.1,<0.2"] = ">=0.1,<0.2"
+    protocol_constraint: Literal[">=0.2,<0.3"] = ">=0.2,<0.3"
     run_root: Literal[".loop-runs"] = ".loop-runs"
     instruction_files: list[str] = Field(
         default_factory=lambda: ["AGENTS.md", "CLAUDE.md"]

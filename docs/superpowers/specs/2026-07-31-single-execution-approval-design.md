@@ -3,7 +3,8 @@
 - 状态：用户已批准设计方向
 - 日期：2026-07-31
 - 适用范围：Codex Adapter 的任务准入与执行前人工门禁
-- 基线：Loop Engineering Core Protocol 0.1.0
+- 当前基线：Loop Engineering Core Protocol 0.2.0
+- 后续决策：Autonomous 风险门由 `2026-07-31-autonomous-single-risk-acceptance-design.md` 取代
 
 ## 1. 问题
 
@@ -18,15 +19,16 @@ Contract、设计和实施计划。`collaborative` 模式因此产生多次语�
 1. 未显式指定模式时直接采用 `collaborative`，不单独询问模式。
 2. 在只读调查后一次性展示可执行契约摘要。
 3. 用户批准该摘要后，设计、计划和普通实施连续进行，不再分别等待确认。
-4. 范围或权限变化、未预授权危险操作、生产访问和敏感数据操作仍暂停。
-5. `collaborative` 与高风险任务的最终人工验收保持不变。
+4. 范围或权限变化进入一次完整契约修订；Autonomous 已披露风险不再逐项暂停。
+5. `collaborative` 保留最终人工验收；Autonomous 不因高风险自动增加最终验收。
 
 ## 3. 非目标
 
 - 不把默认模式改为 `autonomous`。
 - 不取消 Loop Contract、证据、Checker、预算或最终验收。
-- 不放宽生产访问、敏感数据、自动合并、部署、强推或历史改写限制。
-- 不改变 Core 的状态机、Schema 或既有契约兼容性。
+- 不允许未精确披露的生产访问、敏感数据操作或范围扩大。
+- 不放宽自动合并、部署、强推或历史改写限制。
+- 不静默改变 `0.1.0` 契约的既有语义。
 - 不把安装、卸载或 Git 操作变为隐式授权。
 
 ## 4. 交互契约
@@ -65,8 +67,8 @@ Adapter 完成只读调查后，展示一个 `Ready-to-execute Loop Contract` �
 已批准契约内的普通文件修改、验证和精确预授权操作不再询问。以下事件仍暂停：
 
 - 目标、仓库、允许路径、验收条件、危险权限、Git 目标或预算实质变化。
-- `gate check` 返回 `pause` 的未预授权危险操作。
-- 生产环境访问或敏感数据操作。
+- `gate check` 返回 `contract_revision` 的新风险、目标或权限。
+- Collaborative 或旧协议返回的 `dangerous_action`。
 - 来源不明的用户改动与当前任务冲突。
 - 必需证据或外部授权无法获得。
 
@@ -74,28 +76,27 @@ Adapter 完成只读调查后，展示一个 `Ready-to-execute Loop Contract` �
 
 ### 4.4 最终验收
 
-最终验收发生在执行和验证之后，不计入“执行前确认”。`collaborative` 和所有
-高风险任务继续要求 `final_acceptance`；`autonomous` 的低/中风险任务可在无需
-最终人工验收的情况下进入 `DONE`。中高风险任务继续要求独立 Checker。
+最终验收发生在执行和验证之后，不计入“执行前确认”。`collaborative` 继续要求
+`final_acceptance`；Autonomous `0.2.0` 不因风险等级添加该门。中高风险任务继续
+要求独立 Checker，显式项目最终门仍然生效。
 
 ## 5. 组件边界
 
-本次行为变更限定在 Codex Adapter 及其契约测试：
+第一阶段行为变更限定在 Codex Adapter；后续 Autonomous 风险决策升级 Core `0.2.0`：
 
 - `adapters/codex/SKILL.md` 定义单次执行授权的正向交互配方。
 - Adapter 契约测试锁定默认模式、摘要内容、一次执行前批准和保留的风险门。
 - 已批准协议设计更新协作模式说明，消除“契约、设计、计划分别暂停”的旧描述。
 
-Core 现有 `contract_approval`、可选 `design_approval`/`plan_approval`、
-`dangerous_action` 与 `final_acceptance` 数据模型保持不变。这样既收敛默认交互，
-也不破坏已有契约或需要额外阶段门的项目。
+Core 继续支持既有门名，同时为 `0.2.0` 审批增加契约哈希与风险 ID 绑定。旧
+`0.1.0` 契约保持原门禁，需要额外阶段门的项目仍可显式声明。
 
 ## 6. 错误与歧义处理
 
 - 缺少可安全假设的信息时，一次只问一个会阻塞契约起草的问题；这属于需求澄清，
   不是授权确认。
 - 可公开的低风险假设写入摘要，不额外询问。
-- 危险目标不精确时不得预授权；目标解析后再走危险操作门。
+- 危险目标不精确时不得预授权；目标解析后进入完整契约修订。
 - 用户批准后出现范围漂移时，生成完整的新版本摘要并只请求一次修订授权。
 - Adapter 不得用“减少确认”为由跳过平台或仓库要求的强制门禁。
 
@@ -110,8 +111,8 @@ Core 现有 `contract_approval`、可选 `design_approval`/`plan_approval`、
 3. 已执行后才出现未授权危险操作的任务。
 4. 项目显式要求 `design_approval` 的兼容性任务。
 
-期望结果分别为：默认协作且一次执行授权；一次契约授权后连续执行；危险操作仍
-单独暂停；显式额外门禁仍被遵守。
+期望结果分别为：默认协作且一次执行授权；一次契约授权后连续执行；Autonomous
+新危险操作进入一次完整契约修订；显式额外门禁仍被遵守。
 
 ### 7.2 自动化检查
 
@@ -126,6 +127,7 @@ Core 现有 `contract_approval`、可选 `design_approval`/`plan_approval`、
 2. 默认状态变更任务在执行前只有一次授权确认。
 3. 该确认同时公开模式、范围、验收、设计/计划、权限、Git 和预算。
 4. 批准后默认不在设计或计划阶段再次暂停。
-5. 新危险操作、范围变化、生产/敏感操作和最终验收门保持有效。
-6. 显式 `design_approval`/`plan_approval` 的已有契约继续兼容。
-7. Core Schema、状态机和禁止操作规则不被削弱。
+5. 新危险操作、范围变化和权限变化进入一次完整契约修订。
+6. Autonomous 精确披露并接受的生产/敏感操作不产生运行期人工门。
+7. 显式 `design_approval`/`plan_approval` 的已有契约继续兼容。
+8. 永久禁止操作、Checker、Schema 严格性和状态机不被削弱。

@@ -1,6 +1,6 @@
 loop_id: loop-example-001
 contract_version: 1
-protocol_version: 0.1.0
+protocol_version: 0.2.0
 objective: Add one verified example behavior
 mode: collaborative
 repositories:
@@ -41,6 +41,7 @@ permissions:
   database_changes: false
   production_access: false
   sensitive_data: false
+authorized_operations: []
 git_policy:
   targets:
     - repository_id: target

@@ -14,7 +14,7 @@ def test_project_init_creates_minimal_config_without_mode(tmp_path: Path) -> Non
 
     assert config == ProjectConfig.model_validate(raw)
     assert raw == {
-        "protocol_constraint": ">=0.1,<0.2",
+        "protocol_constraint": ">=0.2,<0.3",
         "run_root": ".loop-runs",
         "instruction_files": ["AGENTS.md", "CLAUDE.md"],
     }

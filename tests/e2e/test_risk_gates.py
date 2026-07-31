@@ -4,7 +4,7 @@ from loop_engineering.evidence import DoneEvaluator
 from loop_engineering.models.contract import LoopContract
 from loop_engineering.models.evidence import CompletionContext, EvidenceRecord
 from loop_engineering.models.run import CheckerVerdict
-from tests.factories import valid_contract_data
+from tests.factories import autonomous_risk_contract_data, valid_contract_data
 
 
 def scenario(
@@ -12,13 +12,18 @@ def scenario(
     *,
     checker: CheckerVerdict | None,
     human: bool,
+    protocol_version: str = "0.2.0",
 ) -> tuple[LoopContract, CompletionContext]:
-    data = valid_contract_data()
+    data = (
+        autonomous_risk_contract_data("file_write")
+        if protocol_version == "0.2.0" and risk == "high"
+        else valid_contract_data(protocol_version=protocol_version)
+    )
     data["mode"] = "autonomous"
     data["risk_level"] = risk
     data["human_gates"] = (
         ["contract_approval", "final_acceptance"]
-        if risk == "high"
+        if protocol_version == "0.1.0" and risk == "high"
         else ["contract_approval"]
     )
     data["budget"]["max_checker_revisions"] = {
@@ -72,18 +77,30 @@ def test_medium_risk_rejects_revise_and_accepts_checker_accept() -> None:
     assert DoneEvaluator(contract).evaluate(accepted).done is True
 
 
-def test_high_risk_requires_checker_and_human() -> None:
-    contract, missing_human = scenario(
+def test_v020_high_risk_requires_checker_but_not_final_human() -> None:
+    contract, accepted = scenario(
         "high",
         checker=CheckerVerdict.ACCEPT,
         human=False,
     )
+    assert DoneEvaluator(contract).evaluate(accepted).done is True
+    _, revise = scenario(
+        "high",
+        checker=CheckerVerdict.REVISE,
+        human=False,
+    )
+    assert DoneEvaluator(contract).evaluate(revise).reasons == [
+        "checker has not accepted"
+    ]
+
+
+def test_legacy_high_risk_autonomous_still_requires_final_human() -> None:
+    contract, missing_human = scenario(
+        "high",
+        checker=CheckerVerdict.ACCEPT,
+        human=False,
+        protocol_version="0.1.0",
+    )
     assert DoneEvaluator(contract).evaluate(missing_human).reasons == [
         "human final acceptance is missing"
     ]
-    _, accepted = scenario(
-        "high",
-        checker=CheckerVerdict.ACCEPT,
-        human=True,
-    )
-    assert DoneEvaluator(contract).evaluate(accepted).done is True

@@ -18,6 +18,7 @@ from loop_engineering.policy import (
     ActionRequest,
     GateOutcome,
     GatePolicy,
+    GateRequirement,
     render_confirmation,
 )
 from loop_engineering.project import initialize_project
@@ -140,7 +141,7 @@ def _parser() -> argparse.ArgumentParser:
     gate = groups.add_parser("gate")
     gate_commands = gate.add_subparsers(dest="command", required=True)
     gate_check = gate_commands.add_parser("check")
-    gate_check.add_argument("contract", type=Path)
+    gate_check.add_argument("source", type=Path)
     gate_check.add_argument("request", type=Path)
 
     scope = groups.add_parser("scope")
@@ -281,9 +282,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             request = ActionRequest.model_validate_json(
                 args.request.read_text(encoding="utf-8")
             )
-            decision = GatePolicy(load_contract(args.contract)).evaluate(request)
+            if args.source.is_dir():
+                store = RunStore.open(args.source)
+                policy = GatePolicy(
+                    load_contract(store.contract_path),
+                    authorization=store.current_contract_authorization(),
+                )
+            else:
+                policy = GatePolicy(load_contract(args.source))
+            decision = policy.evaluate(request)
             output = decision.model_dump(mode="json")
-            if decision.outcome is GateOutcome.PAUSE:
+            if (
+                decision.outcome is GateOutcome.PAUSE
+                and decision.required_gate is GateRequirement.DANGEROUS_ACTION
+            ):
                 output["confirmation"] = render_confirmation(request, decision)
             _json(output)
         elif (args.group, args.command) == ("scope", "check"):

@@ -1,3 +1,4 @@
+import re
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
@@ -6,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from loop_engineering.paths import normalized_allowed_boundary
 
-PROTOCOL_VERSION = "0.1.0"
+PROTOCOL_VERSION = "0.2.0"
 
 
 def _validate_git_ref(value: str) -> str:
@@ -92,9 +93,15 @@ class PermissionPolicy(StrictModel):
 
 
 class AuthorizedOperation(StrictModel):
+    risk_id: str | None = Field(default=None, pattern=r"^RISK-[1-9][0-9]*$")
     kind: str = Field(min_length=1)
     repository_id: str | None = None
     target: str = Field(min_length=1)
+    risk_level: RiskLevel | None = None
+    impact: str | None = Field(default=None, min_length=1)
+    worst_case: str | None = Field(default=None, min_length=1)
+    recovery: str | None = Field(default=None, min_length=1)
+    evidence: str | None = Field(default=None, min_length=1)
 
 
 class GitTarget(StrictModel):
@@ -154,7 +161,7 @@ class LoopContract(StrictModel):
     loop_id: str = Field(pattern=r"^loop-[a-z0-9][a-z0-9-]*$")
     parent_loop_id: str | None = None
     contract_version: int = Field(ge=1)
-    protocol_version: Literal["0.1.0"] = PROTOCOL_VERSION
+    protocol_version: Literal["0.1.0", "0.2.0"] = PROTOCOL_VERSION
     objective: str = Field(min_length=1)
     mode: ControlMode = ControlMode.COLLABORATIVE
     repositories: list[RepositoryTarget] = Field(min_length=1)
@@ -222,11 +229,90 @@ class LoopContract(StrictModel):
             raise ValueError("every contract requires contract_approval")
         if len(self.human_gates) != len(set(self.human_gates)):
             raise ValueError("human_gates must be unique")
+        if self.protocol_version == "0.2.0":
+            risk_ids: list[str] = []
+            permission_fields = {
+                "dependency_change": "dependency_changes",
+                "global_package": "dependency_changes",
+                "database_change": "database_changes",
+                "network": "network",
+                "production_access": "production_access",
+                "sensitive_data": "sensitive_data",
+            }
+            risk_rank = {
+                RiskLevel.LOW: 0,
+                RiskLevel.MEDIUM: 1,
+                RiskLevel.HIGH: 2,
+            }
+            for operation in self.authorized_operations:
+                disclosure = (
+                    operation.risk_id,
+                    operation.risk_level,
+                    operation.impact,
+                    operation.worst_case,
+                    operation.recovery,
+                    operation.evidence,
+                )
+                if any(value is None for value in disclosure):
+                    raise ValueError(
+                        "0.2.0 authorized operation requires complete risk disclosure"
+                    )
+                assert operation.risk_id is not None
+                assert operation.risk_level is not None
+                risk_ids.append(operation.risk_id)
+                broad_target = operation.target in {".", "/", "\\"} or bool(
+                    re.fullmatch(r"[A-Za-z]:[\\/]*", operation.target)
+                )
+                if broad_target or any(
+                    token in operation.target
+                    for token in ("*", "[", "]", "$", "`")
+                ):
+                    raise ValueError(
+                        "0.2.0 authorized operation requires a resolved exact target"
+                    )
+                permission_field = permission_fields.get(operation.kind)
+                if permission_field and not getattr(
+                    self.permissions,
+                    permission_field,
+                ):
+                    raise ValueError(
+                        f"contract permission {permission_field} is false"
+                    )
+                if (
+                    operation.kind in {"production_access", "sensitive_data"}
+                    and operation.risk_level is not RiskLevel.HIGH
+                ):
+                    raise ValueError(
+                        f"{operation.kind} authorized operation must be high risk"
+                    )
+                if risk_rank[operation.risk_level] > risk_rank[self.risk_level]:
+                    raise ValueError(
+                        "contract risk level understates an authorized operation"
+                    )
+            if len(risk_ids) != len(set(risk_ids)):
+                raise ValueError("authorized operation risk ids must be unique")
+            if (
+                self.mode is ControlMode.AUTONOMOUS
+                and self.risk_level is RiskLevel.HIGH
+                and not any(
+                    operation.risk_level is RiskLevel.HIGH
+                    for operation in self.authorized_operations
+                )
+            ):
+                raise ValueError(
+                    "0.2.0 high-risk autonomous contract requires a high-risk disclosure"
+                )
         requires_final_gate = (
-            self.mode is ControlMode.COLLABORATIVE or self.risk_level is RiskLevel.HIGH
+            self.mode is ControlMode.COLLABORATIVE
+            or (
+                self.protocol_version == "0.1.0"
+                and self.risk_level is RiskLevel.HIGH
+            )
         )
         if requires_final_gate and "final_acceptance" not in self.human_gates:
-            raise ValueError("collaborative/high-risk contract requires final_acceptance")
+            raise ValueError(
+                "collaborative or legacy high-risk contract requires final_acceptance"
+            )
         expected_revisions = {"low": 0, "medium": 2, "high": 3}[self.risk_level.value]
         if self.budget.max_checker_revisions > expected_revisions:
             raise ValueError("checker revision budget exceeds risk default")

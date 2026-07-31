@@ -33,10 +33,49 @@
     "AuthorizedOperation": {
       "additionalProperties": false,
       "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence"
+        },
+        "impact": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Impact"
+        },
         "kind": {
           "minLength": 1,
           "title": "Kind",
           "type": "string"
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recovery"
         },
         "repository_id": {
           "anyOf": [
@@ -50,10 +89,47 @@
           "default": null,
           "title": "Repository Id"
         },
+        "risk_id": {
+          "anyOf": [
+            {
+              "pattern": "^RISK-[1-9][0-9]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Risk Id"
+        },
+        "risk_level": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RiskLevel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "target": {
           "minLength": 1,
           "title": "Target",
           "type": "string"
+        },
+        "worst_case": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worst Case"
         }
       },
       "required": [
@@ -469,8 +545,11 @@
       "$ref": "#/$defs/PermissionPolicy"
     },
     "protocol_version": {
-      "const": "0.1.0",
-      "default": "0.1.0",
+      "default": "0.2.0",
+      "enum": [
+        "0.1.0",
+        "0.2.0"
+      ],
       "title": "Protocol Version",
       "type": "string"
     },

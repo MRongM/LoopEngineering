@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 
@@ -5,6 +6,16 @@ import yaml
 
 from loop_engineering.models.contract import LoopContract
 from loop_engineering.models.run import LoopEvent, LoopState
+
+
+def contract_fingerprint(contract: LoopContract) -> str:
+    canonical = json.dumps(
+        contract.model_dump(mode="json"),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def load_contract(path: Path) -> LoopContract:

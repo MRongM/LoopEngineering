@@ -1,6 +1,6 @@
 # Loop Engineering
 
-Loop Engineering 0.1.0 provides evidence-gated, recoverable execution loops for
+Loop Engineering 0.2.0 provides evidence-gated, recoverable execution loops for
 coding agents. The Core is tool-independent; the first adapter targets Codex.
 
 ## Use it now
@@ -70,9 +70,11 @@ if the manager refuses the checkout, inspect and preserve the reported local sta
 
 ## Safety boundary
 
-The first release has no scheduler, daemon, automatic merge, automatic deployment,
-force-push, history rewrite or implicit production access. Runtime state under
-`.loop-runs/` is local and ignored by default.
+The release has no scheduler, daemon, automatic merge, automatic deployment,
+force-push or history rewrite. Autonomous production or sensitive-data access is
+allowed only when the exact high risk is disclosed in a `0.2.0` contract and bound
+to its single approval; there is no implicit production authority. Runtime state
+under `.loop-runs/` is local and ignored by default.
 
 ## Development
 
@@ -94,4 +96,5 @@ uv build
 | Git worktree/commit/push | Verified against a local bare remote |
 | GitHub PR creation | Requires an authenticated `gh` CLI |
 | Scheduler or daemon | Not included |
-| Automatic merge/deployment/production access | Forbidden |
+| Automatic merge/deployment | Forbidden |
+| Autonomous production/sensitive operation | Exact disclosed risk + bound approval required |

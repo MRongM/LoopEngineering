@@ -4,7 +4,7 @@ from pathlib import Path
 import yaml
 
 from loop_engineering.cli import main
-from tests.factories import valid_contract_data
+from tests.factories import autonomous_risk_contract_data, valid_contract_data
 
 
 def test_cli_validates_contract_and_exports_schemas(tmp_path: Path, capsys) -> None:
@@ -169,6 +169,77 @@ def test_cli_gate_check_returns_pause_for_production(tmp_path: Path, capsys) -> 
     output = json.loads(capsys.readouterr().out)
     assert output["outcome"] == "pause"
     assert output["confirmation"].startswith("⚠️ 危险操作检测！")
+
+
+def test_cli_gate_check_uses_bound_run_authorization_for_autonomous_risk(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    data = autonomous_risk_contract_data()
+    data["repositories"][0]["path"] = str(tmp_path)
+    contract = tmp_path / "contract.yaml"
+    contract.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    request = tmp_path / "request.json"
+    request.write_text(
+        json.dumps(
+            {
+                "kind": "production_access",
+                "repository_id": "target",
+                "target": "production/customer-index",
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert main(["run", "create", str(contract), "--project", str(tmp_path)]) == 0
+    run_dir = tmp_path / ".loop-runs" / data["loop_id"]
+    assert main(
+        [
+            "run",
+            "approval",
+            str(run_dir),
+            "--actor",
+            "user",
+            "--gate",
+            "contract_approval",
+            "--decision",
+            "approve",
+            "--summary",
+            "accepted disclosed production risk",
+        ]
+    ) == 0
+    capsys.readouterr()
+
+    assert main(["gate", "check", str(run_dir), str(request)]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["outcome"] == "allow"
+    assert output["required_gate"] is None
+    assert "confirmation" not in output
+
+
+def test_cli_direct_v020_contract_cannot_prove_risk_approval(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    data = autonomous_risk_contract_data()
+    contract = tmp_path / "contract.yaml"
+    contract.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    request = tmp_path / "request.json"
+    request.write_text(
+        json.dumps(
+            {
+                "kind": "production_access",
+                "repository_id": "target",
+                "target": "production/customer-index",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert main(["gate", "check", str(contract), str(request)]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["outcome"] == "pause"
+    assert output["required_gate"] == "contract_approval"
+    assert "confirmation" not in output
 
 
 def test_cli_replaces_only_next_contract_version_while_awaiting(

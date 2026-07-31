@@ -12,7 +12,7 @@ def test_codex_skill_declares_required_loop_contract() -> None:
     assert metadata["name"] == "loop-engineering"
     assert "state-changing" in metadata["description"]
     assert "install or uninstall" in metadata["description"]
-    assert "Compatible Core: >=0.1,<0.2" in body
+    assert "Compatible Core: >=0.2,<0.3" in body
     for required in (
         "collaborative",
         "autonomous",
@@ -110,7 +110,7 @@ def test_codex_skill_uses_one_default_pre_execution_approval() -> None:
         "without another approval",
         "do not add `design_approval` or `plan_approval` by default",
         "final acceptance before DONE",
-        "Low/medium-risk autonomous work may reach DONE without final acceptance",
+        "Autonomous `0.2.0` does not add `final_acceptance` based on risk level",
     ):
         assert required in body
 
@@ -118,6 +118,35 @@ def test_codex_skill_uses_one_default_pre_execution_approval() -> None:
         "ask for `collaborative` or `autonomous` unless supplied",
         "`collaborative`: pause at contract, nontrivial design, plan",
         "Record every collaborative design, plan and final decision",
+        "Low/medium-risk autonomous work may reach DONE without final acceptance",
+    ):
+        assert obsolete not in body
+
+
+def test_codex_skill_bundles_autonomous_risk_acceptance() -> None:
+    text = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8")
+    _, _, body = text.split("---", 2)
+
+    for required in (
+        "Autonomous Risk Acceptance",
+        "List every planned dangerous, production, sensitive-data and Git mutation",
+        "risk_id",
+        "worst_case",
+        'gate check "<run-dir>" "<request-json>"',
+        "required_gate=contract_revision",
+        "one revised complete-summary approval",
+        "do not record `dangerous_action`",
+        "production_access",
+        "sensitive_data",
+        "platform or external-service hard gate",
+        "force-push, history rewriting, reset --hard, automatic merge and automatic deployment",
+    ):
+        assert required in body
+
+    for obsolete in (
+        'gate check "<contract-path>" "<request-json>"',
+        "high-risk work still requires it",
+        "Keep emergent-danger and final-acceptance gates distinct",
     ):
         assert obsolete not in body
 
@@ -133,10 +162,10 @@ def test_protocol_design_uses_one_default_pre_execution_approval() -> None:
         "关键设计决策与最小实施计划",
         "批准后，Agent 默认连续通过设计和计划阶段",
         "`design_approval` 或 `plan_approval`",
-        "进入 `DONE` 前必须通过最终人工验收",
-        "低/中风险任务可在无需最终人工验收的情况下进入 `DONE`",
+        "Autonomous `0.2.0` 不因风险等级自动增加最终人工验收",
+        "精确列明且已在契约批准中接受的生产或敏感数据操作不再暂停",
         "解析并披露控制模式",
-        "所有 `collaborative` 运行和高风险任务已通过人工最终验收门",
+        "所有 `collaborative` 运行已通过人工最终验收门",
         "显式指定则采用，否则默认 `collaborative`，不单独询问",
     ):
         assert required in text
@@ -146,5 +175,27 @@ def test_protocol_design_uses_one_default_pre_execution_approval() -> None:
         "`collaborative` 默认在以下节点等待确认",
         "用户在每个任务开始前选择协作执行或自动托管",
         "要求用户选择控制模式",
+        "高风险任务仍需最终人工验收",
+        "需要访问生产环境或传输敏感数据",
+        "所有 `collaborative` 运行和高风险任务已通过人工最终验收门",
     ):
         assert obsolete not in text
+
+
+def test_protocol_v020_defines_bound_autonomous_risk_acceptance() -> None:
+    protocol = Path("PROTOCOL.md").read_text(encoding="utf-8")
+    design = Path(
+        "docs/superpowers/specs/2026-07-31-autonomous-single-risk-acceptance-design.md"
+    ).read_text(encoding="utf-8")
+
+    for required in (
+        "Loop Engineering Core Protocol 0.2.0",
+        "contract_sha256",
+        "accepted_risk_ids",
+        "contract_revision",
+        "Production and sensitive-data operations",
+        "Autonomous 0.2.0",
+    ):
+        assert required in protocol
+    assert "Production and sensitive-data operations always require a fresh human gate" not in protocol
+    assert "用户已批准" in design

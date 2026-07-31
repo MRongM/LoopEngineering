@@ -11,6 +11,7 @@ from filelock import FileLock
 from loop_engineering.models.contract import LoopContract
 from loop_engineering.models.run import (
     CheckerVerdict,
+    ContractAuthorization,
     EventKind,
     LoopEvent,
     LoopState,
@@ -239,12 +240,17 @@ class RunStore:
             LoopStatus.DESIGNING,
             LoopStatus.PLANNING,
         }:
-            approvals = self.summary()["approvals"]
+            summary = self.summary()
+            approvals = summary["approvals"]
             approved = approvals.get("contract_approval") or approvals.get(
                 "contract_revision"
             )
             if not approved:
                 raise ValueError("contract approval is required before planning")
+            if not summary["contract_authorized"]:
+                raise ValueError(
+                    "current contract approval does not match the persisted contract"
+                )
         return self._record_transition(actor=actor, target=target, reason=reason)
 
     def complete(
@@ -274,6 +280,7 @@ class RunStore:
         gates_clear = (
             not summary["pending_intents"]
             and state.status is LoopStatus.DECIDING
+            and summary["contract_authorized"]
             and all(approvals.get(gate) is True for gate in required_gates)
         )
         checker = (
@@ -356,12 +363,75 @@ class RunStore:
         approved: bool,
         summary: str,
     ) -> LoopEvent:
+        payload: dict[str, Any] = {"gate": gate, "approved": approved}
+        if approved and gate in {"contract_approval", "contract_revision"}:
+            from loop_engineering.contract import contract_fingerprint
+
+            contract = LoopContract.model_validate(
+                yaml.safe_load(self.contract_path.read_text(encoding="utf-8"))
+            )
+            if contract.protocol_version == "0.2.0":
+                payload.update(
+                    {
+                        "protocol_version": contract.protocol_version,
+                        "contract_version": contract.contract_version,
+                        "contract_sha256": contract_fingerprint(contract),
+                        "accepted_risk_ids": sorted(
+                            operation.risk_id
+                            for operation in contract.authorized_operations
+                            if operation.risk_id is not None
+                        ),
+                    }
+                )
         return self.append_event(
             actor=actor,
             kind=EventKind.APPROVAL,
             summary=summary,
-            payload={"gate": gate, "approved": approved},
+            payload=payload,
         )
+
+    def current_contract_authorization(self) -> ContractAuthorization | None:
+        from loop_engineering.contract import contract_fingerprint
+
+        contract = LoopContract.model_validate(
+            yaml.safe_load(self.contract_path.read_text(encoding="utf-8"))
+        )
+        if contract.protocol_version != "0.2.0":
+            return None
+        latest: LoopEvent | None = None
+        for event in self.events():
+            if (
+                event.contract_version == contract.contract_version
+                and event.kind is EventKind.APPROVAL
+                and event.payload.get("gate")
+                in {"contract_approval", "contract_revision"}
+            ):
+                latest = event
+        if latest is None or latest.payload.get("approved") is not True:
+            return None
+        try:
+            authorization = ContractAuthorization.model_validate(
+                {
+                    "protocol_version": latest.payload["protocol_version"],
+                    "contract_version": latest.payload["contract_version"],
+                    "contract_sha256": latest.payload["contract_sha256"],
+                    "accepted_risk_ids": latest.payload["accepted_risk_ids"],
+                }
+            )
+        except (KeyError, ValueError):
+            return None
+        expected_risk_ids = sorted(
+            operation.risk_id
+            for operation in contract.authorized_operations
+            if operation.risk_id is not None
+        )
+        if (
+            authorization.contract_version != contract.contract_version
+            or authorization.contract_sha256 != contract_fingerprint(contract)
+            or authorization.accepted_risk_ids != expected_risk_ids
+        ):
+            return None
+        return authorization
 
     def record_checker(
         self,
@@ -404,6 +474,11 @@ class RunStore:
             raise ValueError("revised contract must retain loop_id")
         if revised.contract_version != current.contract_version + 1:
             raise ValueError("revised contract version must increment by one")
+        if (
+            current.protocol_version == "0.2.0"
+            and revised.protocol_version == "0.1.0"
+        ):
+            raise ValueError("protocol downgrade from 0.2.0 is forbidden")
         _atomic_write(
             self.contract_path,
             yaml.safe_dump(revised.model_dump(mode="json"), sort_keys=False),
@@ -425,6 +500,9 @@ class RunStore:
     def summary(self) -> dict[str, Any]:
         events = self.events()
         state = self.load_state()
+        contract = LoopContract.model_validate(
+            yaml.safe_load(self.contract_path.read_text(encoding="utf-8"))
+        )
         approvals: dict[str, bool] = {}
         latest_checker: str | None = None
         for event in events:
@@ -440,5 +518,9 @@ class RunStore:
                 event.action_id for event in self.pending_intents() if event.action_id
             ],
             "approvals": approvals,
+            "contract_authorized": (
+                contract.protocol_version == "0.1.0"
+                or self.current_contract_authorization() is not None
+            ),
             "checker_verdict": latest_checker,
         }

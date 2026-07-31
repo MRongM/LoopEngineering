@@ -1,8 +1,9 @@
+import re
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from loop_engineering.models.contract import StrictModel
 
@@ -42,6 +43,22 @@ class LoopState(StrictModel):
     started_at: datetime
     updated_at: datetime
     pause_reason: str | None = None
+
+
+class ContractAuthorization(StrictModel):
+    protocol_version: Literal["0.2.0"]
+    contract_version: int = Field(ge=1)
+    contract_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    accepted_risk_ids: list[str]
+
+    @field_validator("accepted_risk_ids")
+    @classmethod
+    def validate_risk_ids(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("accepted risk ids must be unique")
+        if any(not re.fullmatch(r"RISK-[1-9][0-9]*", value) for value in values):
+            raise ValueError("accepted risk ids must use RISK-<positive-number>")
+        return values
 
 
 class EventKind(StrEnum):

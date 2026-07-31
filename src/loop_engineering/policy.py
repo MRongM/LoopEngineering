@@ -2,7 +2,9 @@ from enum import StrEnum
 
 from pydantic import Field, model_validator
 
-from loop_engineering.models.contract import LoopContract, StrictModel
+from loop_engineering.contract import contract_fingerprint
+from loop_engineering.models.contract import ControlMode, LoopContract, StrictModel
+from loop_engineering.models.run import ContractAuthorization
 from loop_engineering.paths import is_allowed_path
 
 
@@ -34,6 +36,12 @@ class GateOutcome(StrEnum):
     DENY = "deny"
 
 
+class GateRequirement(StrEnum):
+    CONTRACT_APPROVAL = "contract_approval"
+    CONTRACT_REVISION = "contract_revision"
+    DANGEROUS_ACTION = "dangerous_action"
+
+
 class ActionRequest(StrictModel):
     kind: ActionKind
     target: str = Field(min_length=1)
@@ -62,11 +70,67 @@ class GateDecision(StrictModel):
     outcome: GateOutcome
     reason: str
     requires_confirmation: bool = False
+    required_gate: GateRequirement | None = None
 
 
 class GatePolicy:
-    def __init__(self, contract: LoopContract) -> None:
+    def __init__(
+        self,
+        contract: LoopContract,
+        authorization: ContractAuthorization | None = None,
+    ) -> None:
         self.contract = contract
+        self.authorization = authorization
+
+    @property
+    def _uses_autonomous_risk_grant(self) -> bool:
+        return (
+            self.contract.protocol_version == "0.2.0"
+            and self.contract.mode is ControlMode.AUTONOMOUS
+        )
+
+    def _pause(
+        self,
+        reason: str,
+        required_gate: GateRequirement,
+    ) -> GateDecision:
+        return GateDecision(
+            outcome=GateOutcome.PAUSE,
+            reason=reason,
+            requires_confirmation=True,
+            required_gate=required_gate,
+        )
+
+    def _scope_pause(self, reason: str) -> GateDecision:
+        required_gate = (
+            GateRequirement.CONTRACT_REVISION
+            if self._uses_autonomous_risk_grant
+            else GateRequirement.DANGEROUS_ACTION
+        )
+        return self._pause(reason, required_gate)
+
+    def _authorization_matches_contract(self) -> bool:
+        if self.authorization is None:
+            return False
+        expected_risk_ids = sorted(
+            operation.risk_id
+            for operation in self.contract.authorized_operations
+            if operation.risk_id is not None
+        )
+        return (
+            self.authorization.contract_version == self.contract.contract_version
+            and self.authorization.contract_sha256
+            == contract_fingerprint(self.contract)
+            and self.authorization.accepted_risk_ids == expected_risk_ids
+        )
+
+    def _risk_is_accepted(self, risk_id: str | None) -> bool:
+        return bool(
+            risk_id
+            and self._authorization_matches_contract()
+            and self.authorization
+            and risk_id in self.authorization.accepted_risk_ids
+        )
 
     def evaluate(self, request: ActionRequest) -> GateDecision:
         if request.kind in {
@@ -79,21 +143,23 @@ class GatePolicy:
                 outcome=GateOutcome.DENY,
                 reason="operation is forbidden",
             )
-        if request.kind in {
-            ActionKind.PRODUCTION_ACCESS,
-            ActionKind.SENSITIVE_DATA,
-        }:
-            return GateDecision(
-                outcome=GateOutcome.PAUSE,
-                reason="operation always requires a fresh human gate",
-                requires_confirmation=True,
+        if (
+            self._uses_autonomous_risk_grant
+            and not self._authorization_matches_contract()
+        ):
+            return self._pause(
+                "current contract approval is missing or stale",
+                GateRequirement.CONTRACT_APPROVAL,
             )
-
-        exact = any(
-            operation.kind == request.kind.value
-            and operation.repository_id == request.repository_id
-            and operation.target == request.target
-            for operation in self.contract.authorized_operations
+        exact = next(
+            (
+                operation
+                for operation in self.contract.authorized_operations
+                if operation.kind == request.kind.value
+                and operation.repository_id == request.repository_id
+                and operation.target == request.target
+            ),
+            None,
         )
         if request.kind in {
             ActionKind.FILE_WRITE,
@@ -113,14 +179,12 @@ class GatePolicy:
                 repository
                 and (
                     is_allowed_path(request.target, repository.allowed_paths)
-                    or (exact and is_allowed_path(request.target, ["."]))
+                    or (exact is not None and is_allowed_path(request.target, ["."]))
                 )
             )
             if not target_allowed:
-                return GateDecision(
-                    outcome=GateOutcome.PAUSE,
-                    reason="target is outside approved repository paths",
-                    requires_confirmation=True,
+                return self._scope_pause(
+                    "target is outside approved repository paths"
                 )
 
         git_target = next(
@@ -148,17 +212,51 @@ class GatePolicy:
         }
         if request.kind in git_flags:
             allowed = git_flags[request.kind]
+            if not allowed:
+                return self._scope_pause("Git action is not preauthorized")
+            if self._uses_autonomous_risk_grant:
+                if exact is None:
+                    return self._scope_pause(
+                        "Git action lacks a disclosed exact risk grant"
+                    )
+                if not self._risk_is_accepted(exact.risk_id):
+                    return self._pause(
+                        "current contract risk acceptance is missing or stale",
+                        GateRequirement.CONTRACT_APPROVAL,
+                    )
             return GateDecision(
-                outcome=GateOutcome.ALLOW if allowed else GateOutcome.PAUSE,
-                reason=(
-                    "Git action matches contract"
-                    if allowed
-                    else "Git action is not preauthorized"
-                ),
-                requires_confirmation=not allowed,
+                outcome=GateOutcome.ALLOW,
+                reason="Git action matches approved contract and risk grant",
             )
 
-        if exact:
+        if request.kind in {
+            ActionKind.PRODUCTION_ACCESS,
+            ActionKind.SENSITIVE_DATA,
+        }:
+            if not self._uses_autonomous_risk_grant:
+                return self._pause(
+                    "operation requires a fresh human gate",
+                    GateRequirement.DANGEROUS_ACTION,
+                )
+            if exact is None:
+                return self._scope_pause(
+                    "operation is outside the approved risk grant"
+                )
+            if not getattr(self.contract.permissions, request.kind.value):
+                return self._scope_pause(
+                    f"contract permission {request.kind.value} is false"
+                )
+            if not self._risk_is_accepted(exact.risk_id):
+                return self._pause(
+                    "current contract risk acceptance is missing or stale",
+                    GateRequirement.CONTRACT_APPROVAL,
+                )
+            return GateDecision(
+                outcome=GateOutcome.ALLOW,
+                reason="exact high-risk operation is accepted by the current contract",
+            )
+
+        if exact is not None:
             permission_fields = {
                 ActionKind.DEPENDENCY_CHANGE: "dependency_changes",
                 ActionKind.GLOBAL_PACKAGE: "dependency_changes",
@@ -170,14 +268,19 @@ class GatePolicy:
                 self.contract.permissions,
                 permission_field,
             ):
-                return GateDecision(
-                    outcome=GateOutcome.PAUSE,
-                    reason=f"contract permission {permission_field} is false",
-                    requires_confirmation=True,
+                return self._scope_pause(
+                    f"contract permission {permission_field} is false"
+                )
+            if self._uses_autonomous_risk_grant and not self._risk_is_accepted(
+                exact.risk_id
+            ):
+                return self._pause(
+                    "current contract risk acceptance is missing or stale",
+                    GateRequirement.CONTRACT_APPROVAL,
                 )
             return GateDecision(
                 outcome=GateOutcome.ALLOW,
-                reason="exact operation is preauthorized",
+                reason="exact operation is accepted by the current contract",
             )
 
         dangerous = {
@@ -192,10 +295,8 @@ class GatePolicy:
             ActionKind.PERMISSION_CHANGE,
         }
         if request.kind in dangerous:
-            return GateDecision(
-                outcome=GateOutcome.PAUSE,
-                reason="dangerous operation needs exact approval",
-                requires_confirmation=True,
+            return self._scope_pause(
+                "dangerous operation needs an exact risk grant"
             )
         return GateDecision(
             outcome=GateOutcome.ALLOW,
