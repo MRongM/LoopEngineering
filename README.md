@@ -43,6 +43,37 @@ if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
 After the command reports the version, start a new Codex session and invoke
 `$loop-engineering`.
 
+## Update the Skill from a shell
+
+Run this manually in a terminal; it is not a Codex chat command. Update is
+fast-forward-only. The manager requires the exact clean managed
+checkout on `master`, verifies the official repository URL, runs
+`git pull --ff-only origin master`, revalidates the updated Skill checkout, and then runs
+`uv tool install --reinstall` from that checkout. It refuses local changes, extra branches,
+stashes, unpreserved commits, detached HEAD, alternate origins, and non-fast-forward history.
+
+If CLI reinstall fails after Git succeeds, the updated Skill checkout is retained. Resolve the
+reported `uv` problem and rerun the same command; the manager never deletes or rewinds it.
+
+### Unix one-line update
+
+```bash
+codex_home="${CODEX_HOME:-$HOME/.codex}"; skill_dir="$codex_home/skills/loop-engineering"; python3 "$skill_dir/adapters/codex/scripts/manage.py" update --codex-home "$codex_home" && loop-engineering --version
+```
+
+### Windows PowerShell update
+
+```powershell
+$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
+$skillDir = Join-Path $codexHome "skills/loop-engineering"
+py -3.12 "$skillDir/adapters/codex/scripts/manage.py" update --codex-home "$codexHome"
+if ($LASTEXITCODE -ne 0) { throw "Loop Engineering update failed" }
+loop-engineering --version
+if ($LASTEXITCODE -ne 0) { throw "Loop Engineering update failed" }
+```
+
+Start a new Codex session after the command reports the updated version.
+
 ## Uninstall from Codex
 
 First change to a directory outside the Skill checkout. The manager requires explicit

@@ -1,8 +1,8 @@
-from collections.abc import Callable
 import importlib.util
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 from uuid import uuid4
@@ -63,6 +63,10 @@ def _stub_commands(
     git_local_commits: str = "",
     git_branch: str = "master\n",
     git_remote: str = f"{OFFICIAL_REPOSITORY}\n",
+    git_official_ahead: str = "0\n",
+    git_metadata: str | None = None,
+    git_head: str = "official-head\n",
+    git_fetched_head: str = "official-head\n",
     git_pull_returncode: int = 0,
     git_pull_stderr: str = "",
     after_pull: Callable[[], None] | None = None,
@@ -71,6 +75,8 @@ def _stub_commands(
 ) -> list[tuple[list[str], dict[str, object]]]:
     calls: list[tuple[list[str], dict[str, object]]] = []
     executables = {"git": "/tools/git", "uv": "/tools/uv"}
+    expected_git_dir = manager._repository_root() / ".git"
+    resolved_git_metadata = git_metadata or f"{expected_git_dir}\n{expected_git_dir}\n"
     monkeypatch.setattr(manager.shutil, "which", executables.get)
 
     def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -84,17 +90,21 @@ def _stub_commands(
         if argv[0] == executables["git"]:
             returncode = 0
             stderr = ""
-            if "status" in argv:
+            if "--absolute-git-dir" in argv:
+                stdout = resolved_git_metadata
+            elif "status" in argv:
                 stdout = git_stdout
             elif "for-each-ref" in argv:
                 stdout = git_refs
             elif "rev-list" in argv:
-                stdout = git_local_commits
+                stdout = git_official_ahead if "--count" in argv else git_local_commits
             elif "symbolic-ref" in argv:
                 stdout = git_branch
                 returncode = 0 if git_branch else 1
             elif "get-url" in argv:
                 stdout = git_remote
+            elif "rev-parse" in argv:
+                stdout = f"{git_head}{git_fetched_head}"
             elif "pull" in argv:
                 stdout = ""
                 returncode = git_pull_returncode
@@ -202,6 +212,53 @@ def test_install_rejects_linked_managed_paths(
     assert repository.exists()
 
 
+@pytest.mark.parametrize("metadata_kind", ["gitfile", "link"])
+def test_update_rejects_linked_git_metadata_before_running_commands(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    metadata_kind: str,
+) -> None:
+    codex_home, repository, script = _checkout(tmp_path)
+    shutil.rmtree(repository / ".git")
+    external_git_dir = tmp_path / "external-git-dir"
+    external_git_dir.mkdir()
+    if metadata_kind == "gitfile":
+        (repository / ".git").write_text(
+            f"gitdir: {external_git_dir}\n",
+            encoding="utf-8",
+        )
+    else:
+        try:
+            (repository / ".git").symlink_to(external_git_dir, target_is_directory=True)
+        except OSError as error:
+            pytest.skip(f"directory links are unavailable: {error}")
+    manager = _load_manager(script, monkeypatch)
+    calls = _stub_commands(manager, monkeypatch)
+
+    assert manager.main(["update", "--codex-home", str(codex_home)]) == 2
+    assert calls == []
+    assert repository.exists()
+
+
+def test_update_rejects_git_metadata_resolving_outside_the_checkout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home, repository, script = _checkout(tmp_path)
+    manager = _load_manager(script, monkeypatch)
+    external_git_dir = tmp_path / "external-git-dir"
+    calls = _stub_commands(
+        manager,
+        monkeypatch,
+        git_metadata=f"{external_git_dir}\n{external_git_dir}\n",
+    )
+
+    assert manager.main(["update", "--codex-home", str(codex_home)]) == 2
+    assert len(calls) == 1
+    assert "--absolute-git-dir" in calls[0][0]
+    assert repository.exists()
+
+
 def test_update_fast_forwards_official_master_and_reinstalls_cli(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -213,6 +270,15 @@ def test_update_fast_forwards_official_master_and_reinstalls_cli(
     assert manager.main(["update", "--codex-home", str(codex_home)]) == 0
 
     clean_commands = [
+        [
+            "/tools/git",
+            "-C",
+            str(repository),
+            "rev-parse",
+            "--absolute-git-dir",
+            "--path-format=absolute",
+            "--git-common-dir",
+        ],
         [
             "/tools/git",
             "-C",
@@ -258,6 +324,14 @@ def test_update_fast_forwards_official_master_and_reinstalls_cli(
             "--all",
             "origin",
         ],
+        [
+            "/tools/git",
+            "-C",
+            str(repository),
+            "rev-list",
+            "--count",
+            "refs/remotes/origin/master..HEAD",
+        ],
     ]
     assert [argv for argv, _ in calls] == [
         *clean_commands,
@@ -271,6 +345,14 @@ def test_update_fast_forwards_official_master_and_reinstalls_cli(
             "master",
         ],
         *clean_commands,
+        [
+            "/tools/git",
+            "-C",
+            str(repository),
+            "rev-parse",
+            "HEAD",
+            "FETCH_HEAD",
+        ],
         ["/tools/uv", "tool", "install", "--reinstall", str(repository)],
     ]
 
@@ -317,7 +399,21 @@ def test_update_rejects_a_dirty_checkout_before_pull(
     calls = _stub_commands(manager, monkeypatch, git_stdout=" M README.md\n")
 
     assert manager.main(["update", "--codex-home", str(codex_home)]) == 2
-    assert len(calls) == 1
+    assert len(calls) == 2
+    assert repository.exists()
+
+
+def test_update_rejects_master_ahead_of_official_origin_before_pull(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home, repository, script = _checkout(tmp_path)
+    manager = _load_manager(script, monkeypatch)
+    calls = _stub_commands(manager, monkeypatch, git_official_ahead="1\n")
+
+    assert manager.main(["update", "--codex-home", str(codex_home)]) == 2
+    assert not any("pull" in argv for argv, _ in calls)
+    assert not any(argv[0] == "/tools/uv" for argv, _ in calls)
     assert repository.exists()
 
 
@@ -387,6 +483,25 @@ def test_update_revalidates_markers_before_reinstalling_cli(
     )
 
     assert manager.main(["update", "--codex-home", str(codex_home)]) == 2
+    assert not any(argv[0] == "/tools/uv" for argv, _ in calls)
+    assert repository.exists()
+
+
+def test_update_rejects_a_head_different_from_the_fetched_official_master(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home, repository, script = _checkout(tmp_path)
+    manager = _load_manager(script, monkeypatch)
+    calls = _stub_commands(
+        manager,
+        monkeypatch,
+        git_head="local-head\n",
+        git_fetched_head="official-head\n",
+    )
+
+    assert manager.main(["update", "--codex-home", str(codex_home)]) == 2
+    assert any("pull" in argv for argv, _ in calls)
     assert not any(argv[0] == "/tools/uv" for argv, _ in calls)
     assert repository.exists()
 

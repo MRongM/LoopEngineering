@@ -8,6 +8,8 @@ from collections.abc import Sequence
 from pathlib import Path
 
 TOOL_NAME = "loop-engineering"
+OFFICIAL_REPOSITORY = "https://github.com/MRongM/LoopEngineering.git"
+MANAGED_BRANCH = "master"
 PROTOCOL_HEADER = "# Loop Engineering Core Protocol 0.2.0"
 CORE_COMPATIBILITY = "Compatible Core: >=0.2,<0.3"
 ERROR = 2
@@ -15,16 +17,21 @@ CONFIRMATION_REQUIRED = 3
 
 
 class LifecycleError(RuntimeError):
-    """The requested lifecycle action failed without changing the Skill checkout."""
+    """The requested lifecycle action could not be completed safely."""
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Install or uninstall the Loop Engineering Codex Skill and CLI."
+        description="Install, update, or uninstall the Loop Engineering Codex Skill and CLI."
     )
     commands = parser.add_subparsers(dest="command", required=True)
     install = commands.add_parser("install", help="Install the CLI from this Skill checkout.")
     install.add_argument("--codex-home", type=Path)
+    update = commands.add_parser(
+        "update",
+        help="Fast-forward the managed Skill checkout and reinstall its CLI.",
+    )
+    update.add_argument("--codex-home", type=Path)
     uninstall = commands.add_parser(
         "uninstall",
         help="Uninstall the CLI and remove this validated Skill checkout.",
@@ -63,7 +70,12 @@ def _validate_checkout(codex_home: Path) -> Path:
     repository = _repository_root()
     if repository != expected.resolve():
         raise LifecycleError(f"Skill checkout must be the exact managed path: {expected}")
-    if not repository.is_dir() or not (repository / ".git").exists():
+    git_dir = repository / ".git"
+    if (
+        not repository.is_dir()
+        or not git_dir.is_dir()
+        or _is_link_like(git_dir)
+    ):
         raise LifecycleError("Skill checkout is not a Git repository")
 
     protocol = repository / "PROTOCOL.md"
@@ -101,17 +113,44 @@ def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _install(repository: Path) -> None:
-    result = _run([_executable("uv"), "tool", "install", str(repository)])
+def _install(repository: Path, *, reinstall: bool = False) -> None:
+    argv = [_executable("uv"), "tool", "install"]
+    if reinstall:
+        argv.append("--reinstall")
+    argv.append(str(repository))
+    result = _run(argv)
     if result.returncode != 0:
-        raise LifecycleError("uv tool install failed; the Skill checkout was retained")
-    print(f"Installed {TOOL_NAME} CLI from {repository}")
+        retained = (
+            "the updated Skill checkout was retained"
+            if reinstall
+            else "the Skill checkout was retained"
+        )
+        raise LifecycleError(f"uv tool install failed; {retained}")
+    action = "Reinstalled" if reinstall else "Installed"
+    print(f"{action} {TOOL_NAME} CLI from {repository}")
 
 
 def _ensure_outside(repository: Path) -> None:
     current = Path.cwd().resolve()
     if current == repository or repository in current.parents:
         raise LifecycleError("change to a directory outside the Skill checkout before uninstalling")
+
+
+def _ensure_git_boundary(repository: Path) -> None:
+    git_dir = str(repository / ".git")
+    resolved = _run(
+        [
+            _executable("git"),
+            "-C",
+            str(repository),
+            "rev-parse",
+            "--absolute-git-dir",
+            "--path-format=absolute",
+            "--git-common-dir",
+        ]
+    )
+    if resolved.returncode != 0 or resolved.stdout.splitlines() != [git_dir, git_dir]:
+        raise LifecycleError("Git metadata must remain inside the managed checkout")
 
 
 def _ensure_clean(repository: Path) -> None:
@@ -144,7 +183,7 @@ def _ensure_clean(repository: Path) -> None:
     )
     if refs.returncode != 0:
         raise LifecycleError("could not verify local Git references")
-    if refs.stdout.splitlines() != ["master"]:
+    if refs.stdout.splitlines() != [MANAGED_BRANCH]:
         raise LifecycleError("Skill checkout contains local branches or stashed changes")
 
     local_commits = _run(
@@ -162,6 +201,94 @@ def _ensure_clean(repository: Path) -> None:
         raise LifecycleError("could not verify local Git commits")
     if local_commits.stdout.strip():
         raise LifecycleError("Skill checkout contains commits not preserved by a remote")
+
+
+def _ensure_update_source(repository: Path) -> None:
+    branch = _run(
+        [
+            _executable("git"),
+            "-C",
+            str(repository),
+            "symbolic-ref",
+            "--quiet",
+            "--short",
+            "HEAD",
+        ]
+    )
+    if branch.returncode != 0 or branch.stdout.splitlines() != [MANAGED_BRANCH]:
+        raise LifecycleError(f"Skill checkout must be on {MANAGED_BRANCH}")
+
+    origin = _run(
+        [
+            _executable("git"),
+            "-C",
+            str(repository),
+            "remote",
+            "get-url",
+            "--all",
+            "origin",
+        ]
+    )
+    if origin.returncode != 0 or origin.stdout.splitlines() != [OFFICIAL_REPOSITORY]:
+        raise LifecycleError(f"Skill checkout origin must be {OFFICIAL_REPOSITORY}")
+
+    ahead = _run(
+        [
+            _executable("git"),
+            "-C",
+            str(repository),
+            "rev-list",
+            "--count",
+            f"refs/remotes/origin/{MANAGED_BRANCH}..HEAD",
+        ]
+    )
+    if ahead.returncode != 0 or ahead.stdout.splitlines() != ["0"]:
+        raise LifecycleError(f"Skill checkout contains commits outside origin/{MANAGED_BRANCH}")
+
+
+def _ensure_updated_head(repository: Path) -> None:
+    revisions = _run(
+        [
+            _executable("git"),
+            "-C",
+            str(repository),
+            "rev-parse",
+            "HEAD",
+            "FETCH_HEAD",
+        ]
+    )
+    resolved = revisions.stdout.splitlines()
+    if revisions.returncode != 0 or len(resolved) != 2 or resolved[0] != resolved[1]:
+        raise LifecycleError(f"Skill checkout does not match fetched origin/{MANAGED_BRANCH}")
+
+
+def _update(codex_home: Path, repository: Path) -> None:
+    _ensure_git_boundary(repository)
+    _ensure_clean(repository)
+    _ensure_update_source(repository)
+    result = _run(
+        [
+            _executable("git"),
+            "-C",
+            str(repository),
+            "pull",
+            "--ff-only",
+            "origin",
+            MANAGED_BRANCH,
+        ]
+    )
+    if result.returncode != 0:
+        raise LifecycleError(
+            "Git fast-forward update failed; the CLI was not reinstalled"
+        )
+
+    repository = _validate_checkout(codex_home)
+    _ensure_git_boundary(repository)
+    _ensure_clean(repository)
+    _ensure_update_source(repository)
+    _ensure_updated_head(repository)
+    _install(repository, reinstall=True)
+    print(f"Updated {TOOL_NAME} Skill checkout at {repository}")
 
 
 def _already_uninstalled(result: subprocess.CompletedProcess[str]) -> bool:
@@ -203,6 +330,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         repository = _validate_checkout(codex_home)
         if args.command == "install":
             _install(repository)
+        elif args.command == "update":
+            _update(codex_home, repository)
         elif not args.yes:
             print(
                 f"Refusing to remove {repository} without explicit --yes confirmation.",
