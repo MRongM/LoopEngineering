@@ -1,7 +1,8 @@
 # Loop Engineering
 
 Loop Engineering 0.2.0 provides evidence-gated, recoverable execution loops for
-coding agents. The Core is tool-independent; the first adapter targets Codex.
+coding agents. The Core is tool-independent; Codex and Claude Code adapters provide
+host-specific discovery, approval, execution, and lifecycle guidance.
 
 ## Use it now
 
@@ -100,6 +101,46 @@ py -3.12 "$skillDir/adapters/codex/scripts/manage.py" uninstall --codex-home "$c
 Start a new Codex session after removal. Do not substitute a manual recursive delete;
 if the manager refuses the checkout, inspect and preserve the reported local state.
 
+## Install in Claude Code
+
+The Claude Code adapter uses the native Plugin/Marketplace lifecycle. It requires
+Claude Code with plugin support, Python 3.12+, Git and `uv`. Installation is a
+user-operated bootstrap action: the Adapter never runs these commands on the user's behalf.
+
+Install the Core CLI, register this repository as a marketplace, and install the plugin:
+
+```bash
+uv tool install "git+https://github.com/MRongM/LoopEngineering.git@master"
+claude plugin marketplace add MRongM/LoopEngineering
+claude plugin install loop-engineering@loop-engineering --scope user
+loop-engineering --version
+```
+
+Start a new Claude Code session, or run `/reload-plugins`, then invoke the manual-only
+Skill with `/loop-engineering:loop-engine`. Every later message that should continue
+the workflow must invoke the Skill again. Some Claude Code versions also expose the
+unqualified `/loop-engine` alias; the namespaced command is the stable documented entry.
+
+Update the marketplace, plugin and CLI explicitly:
+
+```bash
+claude plugin marketplace update loop-engineering
+claude plugin update loop-engineering@loop-engineering --scope user
+uv tool install --reinstall "git+https://github.com/MRongM/LoopEngineering.git@master"
+loop-engineering --version
+```
+
+Uninstall the plugin and CLI explicitly:
+
+```bash
+claude plugin uninstall loop-engineering@loop-engineering --scope user
+uv tool uninstall loop-engineering
+```
+
+Plugin installation packages the complete repository so the Skill reads the authoritative
+root `PROTOCOL.md`; only `adapters/claude/` is exposed as a Skill component. Use
+`claude plugin validate .` in a checkout to validate its native manifests without installing.
+
 ## Safety boundary
 
 The release has no scheduler, daemon, automatic merge, automatic deployment,
@@ -114,6 +155,7 @@ under `.loop-runs/` is local and ignored by default.
 uv sync --dev
 uv run pytest -q
 uv run ruff check "src" "tests" "adapters/codex/scripts"
+claude plugin validate .
 uv build
 ```
 
@@ -122,6 +164,7 @@ uv build
 | Capability | Status |
 |---|---|
 | Python 3.12 on macOS | Verified by the local release suite |
+| Claude Code 2.1.176 plugin validation | Verified by the local adapter suite |
 | Python 3.13–3.14 | Declared compatible; CI is required before claiming verified execution |
 | Linux Core CLI | Designed and documented; Linux CI is required before claiming verified execution |
 | Windows Core path/subprocess APIs | Designed and documented; Windows CI is required before claiming verified execution |

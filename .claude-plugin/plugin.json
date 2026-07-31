@@ -1,0 +1,12 @@
+{
+  "name": "loop-engineering",
+  "version": "0.2.0",
+  "description": "Evidence-gated Loop Engineering workflows for Claude Code",
+  "author": {
+    "name": "MRongM"
+  },
+  "repository": "https://github.com/MRongM/LoopEngineering",
+  "skills": [
+    "./adapters/claude/"
+  ]
+}

@@ -6,4 +6,4 @@
 - Never weaken gates, tests or schemas to obtain a passing result.
 - Never add automatic merge, deployment, force-push, history rewrite or production access.
 - Do not commit runtime data, secrets, tokens or complete model reasoning.
-- Keep Core tool-independent; Codex-specific behavior belongs in `adapters/codex/`.
+- Keep Core tool-independent. Host-specific behavior belongs in its matching `adapters/<host>/` directory.

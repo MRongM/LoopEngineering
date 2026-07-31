@@ -1,0 +1,14 @@
+{
+  "name": "loop-engineering",
+  "owner": {
+    "name": "MRongM"
+  },
+  "description": "Loop Engineering adapters for Claude Code",
+  "plugins": [
+    {
+      "name": "loop-engineering",
+      "source": "./",
+      "description": "Evidence-gated Loop Engineering workflows for Claude Code"
+    }
+  ]
+}

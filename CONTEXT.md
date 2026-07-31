@@ -19,3 +19,11 @@ _Avoid_：`$loop-engineering`、`$loop`
 **控制模式（Control Mode）**：
 Skill 激活后的执行方式，取值为 `autonomous` 或 `collaborative`。未显式指定时采用 `autonomous`，用户的显式选择始终优先；控制模式不决定 Skill 是否激活。
 _Avoid_：触发模式、激活模式
+
+**Claude Code Skill 激活（Claude Code Skill Activation）**：
+Claude Code 仅在当前用户消息显式调用 Loop Engineering Skill 时启动或继续流程。虽然已加载的 Skill 内容可能保留在会话上下文中，但该持久化不构成后续用户消息的执行授权。
+_Avoid_：上下文仍存在、自动续用、模型推断续用
+
+**Claude Code Skill 触发词（Claude Code Skill Trigger）**：
+Claude Code Adapter 的规范入口为 `/loop-engineering:loop-engine`。宿主版本可能同时提供非命名空间别名 `/loop-engine`，但文档、审批恢复和跨版本交互统一使用规范入口。
+_Avoid_：`$loop-engine`、语义触发、Hook 自动触发

@@ -11,7 +11,7 @@
 6. 明确批准后再允许 Agent 修改代码。
 7. 最终只接受包含测试证据、Checker 结论和 Git/PR 状态的报告。
 
-Codex Adapter 未显式指定模式时默认 `autonomous`；用户显式指定
+Codex 与 Claude Code Adapter 未显式指定模式时默认 `autonomous`；用户显式指定
 `collaborative` 或 `autonomous` 时始终以用户选择为准。Core 对缺少 `mode` 的合同仍默认 `collaborative`。
 因此，该兼容路径不会被 Adapter 的缺省行为静默升级。
 
@@ -115,6 +115,7 @@ loop-engineering project init --root "/work/acme-orders" --update-gitignore
 Never invoke Loop Engineering automatically.
 Only a current-message $loop-engine invocation starts a new Loop task.
 Every user message that should run or continue Loop Engineering must include $loop-engine.
+In Claude Code, only a current-message /loop-engineering:loop-engine invocation starts or continues a Loop task.
 Require an approved Loop Contract before mutation and evidence before DONE.
 ```
 
@@ -146,3 +147,74 @@ Agent 必须先展示 Loop Contract；Autonomous 契约还必须用一个风险�
 ### 7. 验收交付
 
 检查 `final-report.md`、测试证据、Checker 结论、提交和 PR。合并与部署仍由人工执行。
+
+## Claude Code 原生 Plugin/Marketplace
+
+Claude Code Adapter 使用宿主原生插件生命周期，不复制 Codex 的托管检出管理器。
+需要支持 Plugin 的 Claude Code、Python 3.12+、Git 和 `uv`。以下均为用户在 Shell
+中执行的 bootstrap 操作，Adapter 不得代替用户运行。
+
+### 1. 安装
+
+先安装 Core CLI，再注册仓库 Marketplace 并在 user scope 安装插件：
+
+```bash
+uv tool install "git+https://github.com/MRongM/LoopEngineering.git@master"
+claude plugin marketplace add MRongM/LoopEngineering
+claude plugin install loop-engineering@loop-engineering --scope user
+loop-engineering --version
+```
+
+插件源是完整仓库，因此已安装 Skill 可以读取根级唯一权威 `PROTOCOL.md`；插件清单
+只暴露 `adapters/claude/`。安装完成后运行 `/reload-plugins` 或启动新会话。
+
+规范手动入口是：
+
+```text
+/loop-engineering:loop-engine
+目标：实现一个明确、可验证的目标
+```
+
+Skill 设置 `disable-model-invocation: true`，Claude 不得根据任务语义自动调用。每条启动、
+继续、批准或反馈消息都必须再次显式调用，例如：
+
+```text
+/loop-engineering:loop-engine confirm
+```
+
+部分 Claude Code 版本还会提供 `/loop-engine` 非命名空间别名；跨版本文档和审批恢复统一
+使用规范命名空间入口。
+
+### 2. 更新
+
+Marketplace、插件与 CLI 分别显式更新：
+
+```bash
+claude plugin marketplace update loop-engineering
+claude plugin update loop-engineering@loop-engineering --scope user
+uv tool install --reinstall "git+https://github.com/MRongM/LoopEngineering.git@master"
+loop-engineering --version
+```
+
+更新后运行 `/reload-plugins` 或启动新会话。不得通过 Hook、后台任务或 Adapter 自动更新。
+
+### 3. 卸载
+
+```bash
+claude plugin uninstall loop-engineering@loop-engineering --scope user
+uv tool uninstall loop-engineering
+```
+
+如不再需要该 Marketplace，可由用户通过 Claude 原生命令单独移除；删除 Marketplace
+可能同时影响其插件状态，执行前应先使用 `claude plugin marketplace list` 核对精确名称。
+
+### 4. 本地开发验证
+
+从仓库根运行：
+
+```bash
+claude plugin validate .
+```
+
+该命令只验证 Marketplace、Plugin 与 Skill 元数据。完整验收仍需定向测试、全量测试、
+Ruff、范围检查、独立 Checker 和 Core Completion Evaluator。
