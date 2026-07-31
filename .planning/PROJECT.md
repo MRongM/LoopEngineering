@@ -20,14 +20,14 @@ Agent 只能在明确批准且可验证的范围内自主执行，并且只有�
 - ✓ 新鲜证据、代码指纹、范围、Checker、Gate 与 Git 交付共同派生 `DONE` — 现有 0.2.0 实现
 - ✓ Codex `$loop-engine` 显式启动与 Goal/Run 自然语言续跑 — 现有 Codex Adapter
 - ✓ 受控的 worktree、commit、push 与 PR 自动化，永久禁止强推、历史改写、自动合并和部署 — 现有 0.2.0 实现
+- ✓ Core Protocol 与 Python 包 0.3.0 只接受 Autonomous，且明确旧合同兼容边界 — Phase 1
+- ✓ Agent Shell 只注册 `loop-engine`，生命周期仍按 `loop-engineering` 分发包安全管理 — Phase 2
+- ✓ Codex `$loop-engine` 在一次合同批准后自主设计、计划、执行、验证、修正和可靠续跑 — Phase 3
+- ✓ README、接入指南、兼容矩阵、构建产物和完整发布证据统一到 0.3.0 — Phase 4
 
 ### Active
 
-- [ ] 发布 Core Protocol 与 Python 包 0.3.0，只允许 `autonomous`，并在省略 `mode` 时自动采用该模式
-- [ ] 拒绝所有 `collaborative` 合同与 Run；旧 0.1.0/0.2.0 autonomous 合同继续保留其原有门禁语义
-- [ ] 将 Agent 执行用的 Shell CLI 入口从 `loop-engineering` 完整替换为 `loop-engine`，不保留旧命令别名
-- [ ] 同步协议、模型、模板、生成 Schema、Codex Adapter、生命周期管理器、README、接入文档与兼容性说明
-- [ ] 通过测试先行和完整验证证明模式解析、CLI 安装生命周期、旧协议兼容性及安全门禁未回归
+- 无 — 当前里程碑的 21 项需求均已实现并通过阶段验证。
 
 ### Out of Scope
 
@@ -40,12 +40,11 @@ Agent 只能在明确批准且可验证的范围内自主执行，并且只有�
 
 ## Context
 
-- 当前实现为 Loop Engineering 0.2.0，使用 Python 3.12+、Pydantic strict models、PyYAML 与 filelock。
+- 当前实现为 Loop Engineering 0.3.0，使用 Python 3.12+、Pydantic strict models、PyYAML 与 filelock。
 - Core 保持工具无关；Codex 专有行为位于 `adapters/codex/`。
-- 当前批准设计让 Codex Adapter 在省略模式时采用 `autonomous`，但 Core、通用模板和 JSON Schema 仍默认 `collaborative`。
-- 本里程碑明确取代所有 collaborative 路径以及“拒绝协议级 Autonomous 默认”的旧决策；0.3.0 Core 将拒绝 collaborative 合同和 Run。
-- 当前 Shell CLI 入口为 `loop-engineering`，Adapter 与文档也使用该命令；用户要求统一改为 `loop-engine`。
-- 0.2.0 本地基线验证为 181 个测试通过且 Ruff 无告警；0.3.0 必须保留或提升该验证水平。
+- Core、通用模板和生成 Schema 已仅接受 `autonomous`；0.3 省略模式采用 Autonomous，legacy omission 与 collaborative Run 均拒绝。
+- Python 分发包仍为 `loop-engineering`，唯一 Shell CLI 为 `loop-engine`；Adapter 和当前发布文档均已收敛，且不提供旧 CLI alias。
+- 里程碑最终回归为 231 个测试通过；Ruff、Schema 重建、临时 sdist/wheel 构建、wheel entry point 和 `git diff --check` 均通过。
 
 ## Constraints
 
@@ -61,12 +60,13 @@ Agent 只能在明确批准且可验证的范围内自主执行，并且只有�
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Core Protocol 0.3.0 仅支持 Autonomous | 提供无需模式分支的自主执行 Skill | — Pending |
-| collaborative 合同与 Run 不再兼容 | 用户明确选择彻底移除 collaborative 选项 | — Pending |
-| 旧 0.1.0/0.2.0 autonomous 合同仍可读取 | 只移除 collaborative，不扩大无关兼容性破坏 | — Pending |
-| `loop-engine` 成为唯一 Shell CLI 入口 | 统一 Skill 触发词与 Agent 执行命令的基础名称 | — Pending |
-| 产品名、包名和 `$loop-engine` 触发词保持不变 | 将变更限制在 Core 默认语义和执行命令，避免无关重命名 | — Pending |
-| 安全 Gate、风险绑定、Checker 与证据规则不变 | Autonomous 缺省不能等同于弱化授权或完成标准 | — Pending |
+| Core Protocol 0.3.0 仅支持 Autonomous | 提供无需模式分支的自主执行 Skill | ✓ Phase 1 验证 |
+| collaborative 合同与 Run 不再兼容 | 用户明确选择彻底移除 collaborative 选项 | ✓ Phase 1 验证 |
+| 旧 0.1.0/0.2.0 autonomous 合同仍可读取 | 只移除 collaborative，不扩大无关兼容性破坏 | ✓ Phase 1 验证 |
+| `loop-engine` 成为唯一 Shell CLI 入口 | 统一 Skill 触发词与 Agent 执行命令的基础名称 | ✓ Phase 2 验证 |
+| 产品名、包名和 `$loop-engine` 触发词保持不变 | 将变更限制在 Core 默认语义和执行命令，避免无关重命名 | ✓ Phase 4 身份矩阵与构建产物验证 |
+| 一次完整合同批准后由 Skill 自主选择下一最小动作 | 实现无需 routine confirmation 的可恢复循环 | ✓ Phase 3 决策循环与续跑验证 |
+| 安全 Gate、风险绑定、Checker 与证据规则不变 | Autonomous 缺省不能等同于弱化授权或完成标准 | ✓ Phase 1–4 跨层回归 |
 
 ## Evolution
 
@@ -86,4 +86,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-31 after initialization*
+*Last updated: 2026-07-31 after Phase 4 verification*

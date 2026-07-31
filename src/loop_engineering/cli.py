@@ -34,7 +34,7 @@ def _json(value: object, *, stream: IO[str] | None = None) -> None:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="loop-engineering")
+    parser = argparse.ArgumentParser(prog="loop-engine")
     parser.add_argument("--version", action="version", version=__version__)
     groups = parser.add_subparsers(dest="group", required=True)
 

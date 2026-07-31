@@ -1,4 +1,5 @@
 import re
+from collections.abc import Mapping
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
@@ -7,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from loop_engineering.paths import normalized_allowed_boundary
 
-PROTOCOL_VERSION = "0.2.0"
+PROTOCOL_VERSION = "0.3.0"
 
 
 def _validate_git_ref(value: str) -> str:
@@ -29,7 +30,6 @@ class StrictModel(BaseModel):
 
 
 class ControlMode(StrEnum):
-    COLLABORATIVE = "collaborative"
     AUTONOMOUS = "autonomous"
 
 
@@ -158,12 +158,31 @@ HumanGate = Literal[
 
 
 class LoopContract(StrictModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "protocol_version": {
+                                "enum": ["0.1.0", "0.2.0"],
+                            }
+                        },
+                        "required": ["protocol_version"],
+                    },
+                    "then": {"required": ["mode"]},
+                }
+            ]
+        },
+    )
+
     loop_id: str = Field(pattern=r"^loop-[a-z0-9][a-z0-9-]*$")
     parent_loop_id: str | None = None
     contract_version: int = Field(ge=1)
-    protocol_version: Literal["0.1.0", "0.2.0"] = PROTOCOL_VERSION
+    protocol_version: Literal["0.1.0", "0.2.0", "0.3.0"] = PROTOCOL_VERSION
     objective: str = Field(min_length=1)
-    mode: ControlMode = ControlMode.COLLABORATIVE
+    mode: ControlMode = ControlMode.AUTONOMOUS
     repositories: list[RepositoryTarget] = Field(min_length=1)
     in_scope: list[str] = Field(min_length=1)
     out_of_scope: list[str] = Field(min_length=1)
@@ -180,6 +199,18 @@ class LoopContract(StrictModel):
         min_length=3,
         max_length=3,
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_unsupported_or_ambiguous_mode(cls, data: object) -> object:
+        if not isinstance(data, Mapping):
+            return data
+        if data.get("mode") == "collaborative":
+            raise ValueError("collaborative control mode is unsupported")
+        protocol_version = data.get("protocol_version", PROTOCOL_VERSION)
+        if protocol_version in {"0.1.0", "0.2.0"} and "mode" not in data:
+            raise ValueError("legacy contract requires explicit autonomous mode")
+        return data
 
     @model_validator(mode="after")
     def validate_references_and_risk_budget(self) -> "LoopContract":
@@ -229,7 +260,7 @@ class LoopContract(StrictModel):
             raise ValueError("every contract requires contract_approval")
         if len(self.human_gates) != len(set(self.human_gates)):
             raise ValueError("human_gates must be unique")
-        if self.protocol_version == "0.2.0":
+        if self.protocol_version in {"0.2.0", "0.3.0"}:
             risk_ids: list[str] = []
             permission_fields = {
                 "dependency_change": "dependency_changes",
@@ -255,7 +286,8 @@ class LoopContract(StrictModel):
                 )
                 if any(value is None for value in disclosure):
                     raise ValueError(
-                        "0.2.0 authorized operation requires complete risk disclosure"
+                        f"{self.protocol_version} authorized operation requires "
+                        "complete risk disclosure"
                     )
                 assert operation.risk_id is not None
                 assert operation.risk_level is not None
@@ -268,7 +300,8 @@ class LoopContract(StrictModel):
                     for token in ("*", "[", "]", "$", "`")
                 ):
                     raise ValueError(
-                        "0.2.0 authorized operation requires a resolved exact target"
+                        f"{self.protocol_version} authorized operation requires a "
+                        "resolved exact target"
                     )
                 permission_field = permission_fields.get(operation.kind)
                 if permission_field and not getattr(
@@ -300,19 +333,15 @@ class LoopContract(StrictModel):
                 )
             ):
                 raise ValueError(
-                    "0.2.0 high-risk autonomous contract requires a high-risk disclosure"
+                    f"{self.protocol_version} high-risk autonomous contract requires "
+                    "a high-risk disclosure"
                 )
         requires_final_gate = (
-            self.mode is ControlMode.COLLABORATIVE
-            or (
-                self.protocol_version == "0.1.0"
-                and self.risk_level is RiskLevel.HIGH
-            )
+            self.protocol_version == "0.1.0"
+            and self.risk_level is RiskLevel.HIGH
         )
         if requires_final_gate and "final_acceptance" not in self.human_gates:
-            raise ValueError(
-                "collaborative or legacy high-risk contract requires final_acceptance"
-            )
+            raise ValueError("legacy high-risk contract requires final_acceptance")
         expected_revisions = {"low": 0, "medium": 2, "high": 3}[self.risk_level.value]
         if self.budget.max_checker_revisions > expected_revisions:
             raise ValueError("checker revision budget exceeds risk default")

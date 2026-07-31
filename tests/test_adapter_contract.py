@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import yaml
@@ -15,22 +16,21 @@ def test_codex_skill_declares_required_loop_contract() -> None:
         "Run evidence-gated Loop Engineering workflows and manage the Codex adapter lifecycle."
     )
     assert not metadata["description"].startswith("Use when")
-    assert "Compatible Core: >=0.2,<0.3" in body
+    assert "Compatible Core: >=0.3,<0.4" in body
     for required in (
-        "collaborative",
         "autonomous",
         "Loop Contract",
         "Maker",
         "Checker",
         "BUDGET_EXHAUSTED",
-        "loop-engineering contract validate",
-        "loop-engineering run create",
-        "loop-engineering evidence run",
-        "loop-engineering budget check",
-        "loop-engineering gate check",
-        "loop-engineering completion evaluate",
-        "loop-engineering run complete",
-        "loop-engineering scope check",
+        "loop-engine contract validate",
+        "loop-engine run create",
+        "loop-engine evidence run",
+        "loop-engine budget check",
+        "loop-engine gate check",
+        "loop-engine completion evaluate",
+        "loop-engine run complete",
+        "loop-engine scope check",
         "KISS",
         "append-only",
         "Adapter lifecycle",
@@ -40,7 +40,7 @@ def test_codex_skill_declares_required_loop_contract() -> None:
         "user-operated",
         "https://github.com/MRongM/LoopEngineering.git",
         "--branch master",
-        "loop-engineering --version",
+        "loop-engine --version",
         "PowerShell",
         "py -3.12",
         "不得自动合并或部署",
@@ -49,6 +49,102 @@ def test_codex_skill_declares_required_loop_contract() -> None:
     assert 'mkdir -p "$codex_home/skills" && \\' in body
     assert 'install --codex-home "$codex_home" && \\' in body
     assert 'throw "Loop Engineering install failed"' in body
+    assert "collaborative" not in body.casefold()
+
+
+def test_codex_skill_is_autonomous_only() -> None:
+    _, _, body = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8").split("---", 2)
+
+    for required in (
+        "`protocol_version: 0.3.0`",
+        "`mode: autonomous`",
+        "Do not ask the user to choose a control mode.",
+        "Reject incompatible mode input",
+        "## Autonomous execution",
+        "The Adapter has no alternate control-mode path.",
+    ):
+        assert required in body
+
+    for obsolete in (
+        "collaborative",
+        "Resolve the mode from the current request",
+        "The user may downgrade",
+        "Upgrading requires explicit approval",
+        "## Control modes",
+    ):
+        assert obsolete.casefold() not in body.casefold()
+
+    for group in (
+        "contract",
+        "run",
+        "evidence",
+        "budget",
+        "completion",
+        "gate",
+        "scope",
+        "git",
+    ):
+        assert f"loop-engine {group}" in body
+        assert f"loop-engineering {group}" not in body
+
+
+def test_codex_skill_runs_the_autonomous_decision_loop() -> None:
+    _, _, body = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8").split("---", 2)
+
+    for required in (
+        "## Autonomous decision loop",
+        "`designing -> planning -> executing -> verifying -> checking -> deciding`",
+        "one unmet acceptance criterion",
+        "next smallest action",
+        "Fresh evidence and material progress",
+        "A test or command failure with new information",
+        "Two consecutive iterations without new evidence or material progress",
+        "Checker `REVISE`",
+        "Checker `BLOCK`",
+        "Checker `ACCEPT` plus every current DONE fact",
+        "The same failed strategy may be attempted at most once",
+        "BUDGET_EXHAUSTED",
+    ):
+        assert required in body
+
+
+def test_codex_skill_pauses_only_at_hard_boundaries() -> None:
+    _, _, body = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8").split("---", 2)
+
+    for required in (
+        "## Hard pause and stop boundaries",
+        "complete contract revision",
+        "current bound approval is missing, stale or mismatched",
+        "Goal/Run binding is missing, ambiguous, stale or unrelated",
+        "pending intent cannot be reconciled",
+        "platform or external authentication hard gate",
+        "necessary authority or input is unavailable",
+        "required independent Checker is unavailable",
+        "user cancels",
+        "authoritative budget or terminal state",
+        "Risk level alone is not a pause boundary.",
+        "Permanent-deny operations remain denied",
+        "otherwise return to diagnosis with the exact finding",
+    ):
+        assert required in body
+
+    assert "otherwise pause with the exact finding" not in body
+
+
+def test_codex_skill_completion_requires_fresh_evidence() -> None:
+    _, _, body = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8").split("---", 2)
+
+    for required in (
+        "current code fingerprint",
+        "fresh validator evidence",
+        "current scope result",
+        "required Checker `ACCEPT`",
+        "current contract authorization",
+        "no unresolved intent",
+        "Never use prose, stale evidence or Maker confidence as completion evidence.",
+        '`loop-engine completion evaluate "<contract-path>" "<context-json>"`',
+    ):
+        assert required in body
 
 
 def test_codex_skill_enables_task_scoped_implicit_selection() -> None:
@@ -63,7 +159,7 @@ def test_adoption_guide_has_manual_and_installed_paths() -> None:
     text = Path("docs/adoption.md").read_text(encoding="utf-8")
     assert "立即可用：人工引用规范" in text
     assert "托管安装与卸载：CLI + Codex Skill" in text
-    assert "loop-engineering project init" in text
+    assert "loop-engine project init" in text
     assert "$loop-engine" in text
     assert "$loop-engineering" not in text
     assert "manage.py\" install --codex-home" in text
@@ -72,6 +168,53 @@ def test_adoption_guide_has_manual_and_installed_paths() -> None:
     assert 'mkdir -p "$codex_home/skills" && \\' in text
     assert 'throw "Loop Engineering install failed"' in text
     assert "ln -s" not in text
+
+
+def test_current_release_docs_use_only_loop_engine_commands() -> None:
+    active_paths = (
+        Path("README.md"),
+        Path("docs/adoption.md"),
+        Path("docs/compatibility.md"),
+        Path("CONTEXT.md"),
+        Path("docs/adr/0001-require-manual-skill-invocation.md"),
+        Path("adapters/codex/SKILL.md"),
+    )
+    legacy_command = re.compile(
+        r"\b(?:loop-engineering|loop-agent)\s+"
+        r"(?:--version|--help|project|contract|schema|run|evidence|budget|completion|gate|scope|git)\b"
+    )
+
+    active_docs = {path: path.read_text(encoding="utf-8") for path in active_paths}
+    for path, text in active_docs.items():
+        assert legacy_command.search(text) is None, path
+
+    assert "loop-engine --version" in active_docs[Path("README.md")]
+    assert "loop-engine --version" in active_docs[Path("docs/adoption.md")]
+    assert "loop-engine project init" in active_docs[Path("docs/adoption.md")]
+
+
+def test_compatibility_guide_defines_030_identity_and_migration_boundaries() -> None:
+    text = Path("docs/compatibility.md").read_text(encoding="utf-8")
+
+    for required in (
+        "Loop Engineering 0.3.0",
+        "Python 分发包",
+        "`loop-engineering`",
+        "托管 checkout",
+        "`$loop-engine`",
+        "唯一 Shell CLI",
+        "`loop-engine`",
+        "`loop-agent`",
+        "不提供 CLI alias",
+        "0.1.0/0.2.0",
+        "显式 `mode: autonomous`",
+        "省略 `mode`",
+        "`mode: collaborative`",
+        "不提供自动迁移",
+        "历史审计记录",
+        "不是当前执行指南",
+    ):
+        assert required in text
 
 
 def test_codex_skill_requires_the_short_trigger_only_for_new_tasks() -> None:
@@ -126,7 +269,15 @@ def test_codex_skill_supports_task_scoped_goal_bound_continuation() -> None:
         "`get_goal`",
         "`update_goal`",
         "`platform_state`",
-        "`loop-engineering run events`",
+        "`loop-engine run events`",
+        "`loop-engine run status`",
+        "Revalidate the current contract authorization binding",
+        "`protocol_version`",
+        "`contract_version`",
+        "`contract_sha256`",
+        "complete `accepted_risk_ids`",
+        "Reconcile every pending intent",
+        "`loop-engine budget check`",
         "Do not set `token_budget` unless the user explicitly supplies it",
         "unrelated active Goal",
         "authoritative Loop `DONE`",
@@ -178,7 +329,7 @@ def test_readme_documents_one_line_managed_install() -> None:
         ' "https://github.com/MRongM/LoopEngineering.git" "$skill_dir"'
         ' && python3 "$skill_dir/adapters/codex/scripts/manage.py"'
         ' install --codex-home "$codex_home"'
-        " && loop-engineering --version"
+        " && loop-engine --version"
     )
 
     assert install in text
@@ -203,7 +354,7 @@ def test_readme_documents_one_line_fail_closed_uninstall() -> None:
     assert "rm -rf" not in text
 
 
-def test_codex_skill_uses_one_default_pre_execution_approval() -> None:
+def test_codex_skill_uses_one_autonomous_pre_execution_approval() -> None:
     text = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8")
     _, _, body = text.split("---", 2)
 
@@ -214,8 +365,8 @@ def test_codex_skill_uses_one_default_pre_execution_approval() -> None:
         "key design decisions and the minimal implementation plan",
         "without another approval",
         "do not add `design_approval` or `plan_approval` by default",
-        "final acceptance before DONE",
-        "Autonomous `0.2.0` does not add `final_acceptance` based on risk level",
+        "Do not add `final_acceptance` by default",
+        "Risk level alone never creates another human gate",
     ):
         assert required in body
 
@@ -224,18 +375,20 @@ def test_codex_skill_uses_one_default_pre_execution_approval() -> None:
         "`collaborative`: pause at contract, nontrivial design, plan",
         "Record every collaborative design, plan and final decision",
         "Low/medium-risk autonomous work may reach DONE without final acceptance",
+        "final acceptance before DONE",
     ):
-        assert obsolete not in body
+        assert obsolete.casefold() not in body.casefold()
 
 
-def test_codex_skill_defaults_omitted_mode_to_autonomous() -> None:
+def test_codex_skill_defaults_every_new_task_to_autonomous() -> None:
     text = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8")
     _, _, body = text.split("---", 2)
 
     for required in (
-        "Use an explicit `collaborative` or\n   `autonomous` choice when supplied; otherwise set `autonomous`",
-        "| Mode omitted | Select `autonomous` and disclose it in the complete summary |",
-        "Resolve an omitted mode to `autonomous` and disclose it in the summary",
+        "Set `protocol_version: 0.3.0` and `mode: autonomous` for every new task.",
+        "Do not ask the user to choose a control mode.",
+        "Reject incompatible mode input",
+        "| New task | Set Autonomous Protocol 0.3 in the complete contract |",
     ):
         assert required in body
 
@@ -243,11 +396,13 @@ def test_codex_skill_defaults_omitted_mode_to_autonomous() -> None:
         "otherwise set `collaborative` without a separate mode prompt",
         "| Mode omitted | Select `collaborative` and disclose it in the complete summary |",
         "Resolve an omitted mode to `collaborative` and disclose it in the summary",
+        "Use an explicit `collaborative`",
+        "| Mode omitted |",
     ):
-        assert obsolete not in body
+        assert obsolete.casefold() not in body.casefold()
 
 
-def test_adapter_default_design_preserves_the_core_compatibility_fallback() -> None:
+def test_current_compatibility_supersedes_historical_mode_defaults() -> None:
     current = Path(
         "docs/superpowers/specs/2026-07-31-codex-autonomous-default-design.md"
     ).read_text(encoding="utf-8")
@@ -258,12 +413,14 @@ def test_adapter_default_design_preserves_the_core_compatibility_fallback() -> N
         "docs/superpowers/specs/2026-07-31-single-execution-approval-design.md"
     ).read_text(encoding="utf-8")
     adoption = Path("docs/adoption.md").read_text(encoding="utf-8")
+    compatibility = Path("docs/compatibility.md").read_text(encoding="utf-8")
 
     assert "- 状态：用户已批准" in current
     for legacy_design in (protocol_design, approval_design):
         assert "2026-07-31-codex-autonomous-default-design.md" in legacy_design
-    assert "未显式指定模式时默认 `autonomous`" in adoption
-    assert "Core 对缺少 `mode` 的合同仍默认 `collaborative`" in adoption
+    assert "新合同固定使用 `mode: autonomous`" in adoption
+    assert "0.3.0 省略 `mode` 时解析为 `autonomous`" in compatibility
+    assert "旧版本省略 `mode` 时拒绝读取" in compatibility
 
 
 def test_codex_skill_keeps_control_files_inside_target_project() -> None:
@@ -316,6 +473,7 @@ def test_codex_skill_bundles_autonomous_risk_acceptance() -> None:
         'gate check "<contract-path>" "<request-json>"',
         "high-risk work still requires it",
         "Keep emergent-danger and final-acceptance gates distinct",
+        "loop-engineering gate check",
     ):
         assert obsolete not in body
 
@@ -351,19 +509,19 @@ def test_protocol_design_uses_one_default_pre_execution_approval() -> None:
         assert obsolete not in text
 
 
-def test_protocol_v020_defines_bound_autonomous_risk_acceptance() -> None:
+def test_protocol_v030_defines_bound_autonomous_risk_acceptance() -> None:
     protocol = Path("PROTOCOL.md").read_text(encoding="utf-8")
     design = Path(
         "docs/superpowers/specs/2026-07-31-autonomous-single-risk-acceptance-design.md"
     ).read_text(encoding="utf-8")
 
     for required in (
-        "Loop Engineering Core Protocol 0.2.0",
+        "Loop Engineering Core Protocol 0.3.0",
         "contract_sha256",
         "accepted_risk_ids",
         "contract_revision",
         "Production and sensitive-data operations",
-        "Autonomous 0.2.0",
+        "Autonomous 0.2.0/0.3.0",
     ):
         assert required in protocol
     assert "Production and sensitive-data operations always require a fresh human gate" not in protocol

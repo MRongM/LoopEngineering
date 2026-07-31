@@ -1,15 +1,18 @@
 # Loop Engineering
 
-Loop Engineering 0.2.0 provides evidence-gated, recoverable execution loops for
+Loop Engineering 0.3.0 provides evidence-gated, recoverable execution loops for
 coding agents. The Core is tool-independent; the first adapter targets Codex.
+Protocol 0.3 is Autonomous-only: every new task uses one approved contract and
+continues inside its verified scope without a control-mode choice.
 
 ## Use it now
 
 Without installing code, reference the approved design in your task and require an
 approved Loop Contract before any mutation:
 
-- [Design specification](docs/superpowers/specs/2026-07-30-loop-engineering-protocol-design.md)
+- [0.3 Autonomous-only design](docs/superpowers/specs/2026-07-31-loop-engineering-0.3-autonomous-only-design.md)
 - [Cross-project adoption guide](docs/adoption.md)
+- [Compatibility and naming](docs/compatibility.md)
 
 ## Install in Codex
 
@@ -22,7 +25,7 @@ checked-in lifecycle manager and never overwrites an existing destination.
 Run from any directory:
 
 ```bash
-codex_home="${CODEX_HOME:-$HOME/.codex}"; skill_dir="$codex_home/skills/loop-engineering"; mkdir -p "$codex_home/skills" && git clone --depth 1 --branch master "https://github.com/MRongM/LoopEngineering.git" "$skill_dir" && python3 "$skill_dir/adapters/codex/scripts/manage.py" install --codex-home "$codex_home" && loop-engineering --version
+codex_home="${CODEX_HOME:-$HOME/.codex}"; skill_dir="$codex_home/skills/loop-engineering"; mkdir -p "$codex_home/skills" && git clone --depth 1 --branch master "https://github.com/MRongM/LoopEngineering.git" "$skill_dir" && python3 "$skill_dir/adapters/codex/scripts/manage.py" install --codex-home "$codex_home" && loop-engine --version
 ```
 
 ### Windows PowerShell install
@@ -36,7 +39,7 @@ git clone --depth 1 --branch master "https://github.com/MRongM/LoopEngineering.g
 if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
 py -3.12 "$skillDir/adapters/codex/scripts/manage.py" install --codex-home "$codexHome"
 if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
-loop-engineering --version
+loop-engine --version
 if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
 ```
 
@@ -81,7 +84,7 @@ reported `uv` problem and rerun the same command; the manager never deletes or r
 ### Unix one-line update
 
 ```bash
-codex_home="${CODEX_HOME:-$HOME/.codex}"; skill_dir="$codex_home/skills/loop-engineering"; python3 "$skill_dir/adapters/codex/scripts/manage.py" update --codex-home "$codex_home" && loop-engineering --version
+codex_home="${CODEX_HOME:-$HOME/.codex}"; skill_dir="$codex_home/skills/loop-engineering"; python3 "$skill_dir/adapters/codex/scripts/manage.py" update --codex-home "$codex_home" && loop-engine --version
 ```
 
 ### Windows PowerShell update
@@ -91,7 +94,7 @@ $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".c
 $skillDir = Join-Path $codexHome "skills/loop-engineering"
 py -3.12 "$skillDir/adapters/codex/scripts/manage.py" update --codex-home "$codexHome"
 if ($LASTEXITCODE -ne 0) { throw "Loop Engineering update failed" }
-loop-engineering --version
+loop-engine --version
 if ($LASTEXITCODE -ne 0) { throw "Loop Engineering update failed" }
 ```
 
@@ -126,9 +129,17 @@ if the manager refuses the checkout, inspect and preserve the reported local sta
 
 The release has no scheduler, daemon, automatic merge, automatic deployment,
 force-push or history rewrite. Autonomous production or sensitive-data access is
-allowed only when the exact high risk is disclosed in a `0.2.0` contract and bound
+allowed only when the exact high risk is disclosed in a `0.3.0` contract and bound
 to its single approval; there is no implicit production authority. Runtime state
 under `.loop-runs/` is local and ignored by default.
+
+## Names and compatibility
+
+The product and repository remain **Loop Engineering**. The Python distribution and
+managed checkout remain `loop-engineering`; the Codex Skill trigger remains
+`$loop-engine`; the only Agent Shell executable is `loop-engine`. The distribution
+does not install legacy CLI aliases. See [compatibility and naming](docs/compatibility.md)
+for supported legacy Autonomous contracts and deterministic rejection boundaries.
 
 ## Development
 

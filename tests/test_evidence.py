@@ -193,8 +193,10 @@ def test_done_rejects_scope_drift_unresolved_gate_and_stale_contract() -> None:
     assert "evidence belongs to a stale contract version" in evaluation.reasons
 
 
-def test_collaborative_mode_requires_final_human_acceptance() -> None:
-    contract = LoopContract.model_validate(valid_contract_data())
+def test_explicit_final_acceptance_gate_remains_enforced() -> None:
+    data = valid_contract_data()
+    data["human_gates"].append("final_acceptance")
+    contract = LoopContract.model_validate(data)
 
     evaluation = DoneEvaluator(contract).evaluate(
         CompletionContext(

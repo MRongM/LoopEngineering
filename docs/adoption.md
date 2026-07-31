@@ -3,25 +3,23 @@
 ## 立即可用：人工引用规范
 
 1. 在任务中提供规范地址：
-   `https://github.com/MRongM/LoopEngineering/blob/master/docs/superpowers/specs/2026-07-30-loop-engineering-protocol-design.md`。
-2. 明确控制模式：`collaborative` 或 `autonomous`。
-3. 提供目标仓库、目标、验收标准和期望的 Git 权限。
-4. 要求 Agent 先只读调查并起草 Loop Contract。
-5. 审阅目标、范围、证据命令、预算、危险权限和 Git 目标。
-6. 明确批准后再允许 Agent 修改代码。
-7. 最终只接受包含测试证据、Checker 结论和 Git/PR 状态的报告。
+   `https://github.com/MRongM/LoopEngineering/blob/master/docs/superpowers/specs/2026-07-31-loop-engineering-0.3-autonomous-only-design.md`。
+2. 提供目标仓库、目标、验收标准和期望的 Git 权限。
+3. 要求 Agent 先只读调查并起草 Loop Contract。
+4. 审阅目标、范围、证据命令、预算、危险权限和 Git 目标。
+5. 明确批准后再允许 Agent 修改代码。
+6. 最终只接受包含测试证据、Checker 结论和 Git/PR 状态的报告。
 
-Codex Adapter 未显式指定模式时默认 `autonomous`；用户显式指定
-`collaborative` 或 `autonomous` 时始终以用户选择为准。Core 对缺少 `mode` 的合同仍默认 `collaborative`。
-因此，该兼容路径不会被 Adapter 的缺省行为静默升级。
+Loop Engineering 0.3.0 只提供 Autonomous。新合同固定使用 `mode: autonomous`，
+不询问或接受其他控制模式；批准仍绑定完整合同、风险、预算和安全门禁。旧合同的
+精确读取规则、被移除的 CLI 名称及不迁移边界见[兼容性与命名](compatibility.md)。
 
 可直接使用以下任务模板：
 
 ```text
 请读取 Loop Engineering 规范：
-https://github.com/MRongM/LoopEngineering/blob/master/docs/superpowers/specs/2026-07-30-loop-engineering-protocol-design.md
+https://github.com/MRongM/LoopEngineering/blob/master/docs/superpowers/specs/2026-07-31-loop-engineering-0.3-autonomous-only-design.md
 
-控制模式：autonomous
 目标仓库：/work/acme-orders
 目标：实现一个明确、可验证的目标
 验收标准：
@@ -54,10 +52,10 @@ skill_dir="$codex_home/skills/loop-engineering"
 mkdir -p "$codex_home/skills" && \
 git clone --depth 1 --branch master "https://github.com/MRongM/LoopEngineering.git" "$skill_dir" && \
 python3 "$skill_dir/adapters/codex/scripts/manage.py" install --codex-home "$codex_home" && \
-loop-engineering --version
+loop-engine --version
 ```
 
-预期输出：`0.2.0`。创建新的 Codex 会话以重新发现 Skill。
+预期输出：`0.3.0`。创建新的 Codex 会话以重新发现 Skill。
 
 卸载前先切换到 Skill 目录之外。`--yes` 只确认删除经过校验的精确托管目录；
 如果仓库存在修改、未跟踪或忽略文件，管理器会拒绝删除：
@@ -84,7 +82,7 @@ git clone --depth 1 --branch master "https://github.com/MRongM/LoopEngineering.g
 if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
 py -3.12 "$skillDir/adapters/codex/scripts/manage.py" install --codex-home "$codexHome"
 if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
-loop-engineering --version
+loop-engine --version
 if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
 ```
 
@@ -101,7 +99,7 @@ py -3.12 "$skillDir/adapters/codex/scripts/manage.py" uninstall --codex-home "$c
 ### 3. 初始化目标项目
 
 ```bash
-loop-engineering project init --root "/work/acme-orders" --update-gitignore
+loop-engine project init --root "/work/acme-orders" --update-gitignore
 ```
 
 该命令只创建 `.loop-engineering/project.yaml`，并按显式参数把
@@ -123,7 +121,6 @@ Require an approved Loop Contract before mutation and evidence before DONE.
 
 ```text
 $loop-engine
-控制模式：autonomous
 目标：修复订单重复提交问题
 验收：先复现失败，再证明修复；相关回归测试通过
 Git：允许创建分支、提交、推送和 PR

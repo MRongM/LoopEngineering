@@ -19,6 +19,9 @@ from loop_engineering.models.run import (
 )
 from loop_engineering.redaction import redact
 
+_PROTOCOL_ORDER = {"0.1.0": 1, "0.2.0": 2, "0.3.0": 3}
+_BOUND_AUTH_PROTOCOLS = {"0.2.0", "0.3.0"}
+
 
 class LedgerCorruption(RuntimeError):
     pass
@@ -370,7 +373,7 @@ class RunStore:
             contract = LoopContract.model_validate(
                 yaml.safe_load(self.contract_path.read_text(encoding="utf-8"))
             )
-            if contract.protocol_version == "0.2.0":
+            if contract.protocol_version in _BOUND_AUTH_PROTOCOLS:
                 payload.update(
                     {
                         "protocol_version": contract.protocol_version,
@@ -396,7 +399,7 @@ class RunStore:
         contract = LoopContract.model_validate(
             yaml.safe_load(self.contract_path.read_text(encoding="utf-8"))
         )
-        if contract.protocol_version != "0.2.0":
+        if contract.protocol_version not in _BOUND_AUTH_PROTOCOLS:
             return None
         latest: LoopEvent | None = None
         for event in self.events():
@@ -426,7 +429,8 @@ class RunStore:
             if operation.risk_id is not None
         )
         if (
-            authorization.contract_version != contract.contract_version
+            authorization.protocol_version != contract.protocol_version
+            or authorization.contract_version != contract.contract_version
             or authorization.contract_sha256 != contract_fingerprint(contract)
             or authorization.accepted_risk_ids != expected_risk_ids
         ):
@@ -475,10 +479,13 @@ class RunStore:
         if revised.contract_version != current.contract_version + 1:
             raise ValueError("revised contract version must increment by one")
         if (
-            current.protocol_version == "0.2.0"
-            and revised.protocol_version == "0.1.0"
+            _PROTOCOL_ORDER[revised.protocol_version]
+            < _PROTOCOL_ORDER[current.protocol_version]
         ):
-            raise ValueError("protocol downgrade from 0.2.0 is forbidden")
+            raise ValueError(
+                f"protocol downgrade from {current.protocol_version} "
+                f"to {revised.protocol_version} is forbidden"
+            )
         _atomic_write(
             self.contract_path,
             yaml.safe_dump(revised.model_dump(mode="json"), sort_keys=False),

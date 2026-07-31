@@ -1,8 +1,8 @@
 loop_id: loop-example-001
 contract_version: 1
-protocol_version: 0.2.0
+protocol_version: 0.3.0
 objective: Add one verified example behavior
-mode: collaborative
+mode: autonomous
 repositories:
   - id: target
     path: .
@@ -60,7 +60,6 @@ budget:
   max_same_strategy_retries: 1
 human_gates:
   - contract_approval
-  - final_acceptance
 assumptions:
   - The repository uses Python
 stop_conditions:

@@ -21,7 +21,7 @@ def policy(data: dict | None = None) -> GatePolicy:
 def approved_policy(data: dict) -> GatePolicy:
     contract = LoopContract.model_validate(data)
     authorization = ContractAuthorization(
-        protocol_version="0.2.0",
+        protocol_version=contract.protocol_version,
         contract_version=contract.contract_version,
         contract_sha256=contract_fingerprint(contract),
         accepted_risk_ids=sorted(
@@ -33,14 +33,17 @@ def approved_policy(data: dict) -> GatePolicy:
     return GatePolicy(contract, authorization=authorization)
 
 
-def test_merge_deploy_force_and_history_rewrite_are_always_denied() -> None:
+@pytest.mark.parametrize("protocol_version", ["0.1.0", "0.2.0", "0.3.0"])
+def test_merge_deploy_force_and_history_rewrite_are_always_denied(
+    protocol_version: str,
+) -> None:
     for kind in (
         ActionKind.MERGE,
         ActionKind.DEPLOY,
         ActionKind.FORCE_PUSH,
         ActionKind.HISTORY_REWRITE,
     ):
-        decision = policy().evaluate(
+        decision = policy(valid_contract_data(protocol_version=protocol_version)).evaluate(
             ActionRequest(kind=kind, repository_id="target", target="master")
         )
         assert decision.outcome is GateOutcome.DENY
@@ -57,14 +60,18 @@ def test_legacy_production_and_sensitive_data_pause_for_fresh_human_gate() -> No
         assert decision.required_gate == "dangerous_action"
 
 
+@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
 @pytest.mark.parametrize(
-    "kind",
-    [ActionKind.PRODUCTION_ACCESS, ActionKind.SENSITIVE_DATA],
+    "kind", [ActionKind.PRODUCTION_ACCESS, ActionKind.SENSITIVE_DATA]
 )
-def test_v020_autonomous_allows_exact_approved_high_risk_operation(
+def test_bound_autonomous_allows_exact_approved_high_risk_operation(
     kind: ActionKind,
+    protocol_version: str,
 ) -> None:
-    data = autonomous_risk_contract_data(kind.value)
+    data = autonomous_risk_contract_data(
+        kind.value,
+        protocol_version=protocol_version,
+    )
     decision = approved_policy(data).evaluate(
         ActionRequest(
             kind=kind,
@@ -78,11 +85,14 @@ def test_v020_autonomous_allows_exact_approved_high_risk_operation(
     assert decision.required_gate is None
 
 
-def test_v020_autonomous_exact_risk_requires_current_contract_approval() -> None:
-    data = autonomous_risk_contract_data()
+@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
+def test_bound_autonomous_exact_risk_requires_current_contract_approval(
+    protocol_version: str,
+) -> None:
+    data = autonomous_risk_contract_data(protocol_version=protocol_version)
     contract = LoopContract.model_validate(data)
     stale = ContractAuthorization(
-        protocol_version="0.2.0",
+        protocol_version=protocol_version,
         contract_version=contract.contract_version,
         contract_sha256="0" * 64,
         accepted_risk_ids=["RISK-1"],
@@ -99,10 +109,11 @@ def test_v020_autonomous_exact_risk_requires_current_contract_approval() -> None
         assert decision.required_gate == "contract_approval"
 
 
-def test_v020_autonomous_scoped_write_requires_bound_contract_approval() -> None:
-    data = valid_contract_data()
-    data["mode"] = "autonomous"
-    data["human_gates"] = ["contract_approval"]
+@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
+def test_bound_autonomous_scoped_write_requires_contract_approval(
+    protocol_version: str,
+) -> None:
+    data = valid_contract_data(protocol_version=protocol_version)
     request = ActionRequest(
         kind=ActionKind.FILE_WRITE,
         repository_id="target",
@@ -117,8 +128,11 @@ def test_v020_autonomous_scoped_write_requires_bound_contract_approval() -> None
     assert accepted.outcome is GateOutcome.ALLOW
 
 
-def test_v020_autonomous_new_target_requires_complete_contract_revision() -> None:
-    data = autonomous_risk_contract_data()
+@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
+def test_bound_autonomous_new_target_requires_complete_contract_revision(
+    protocol_version: str,
+) -> None:
+    data = autonomous_risk_contract_data(protocol_version=protocol_version)
     decision = approved_policy(data).evaluate(
         ActionRequest(
             kind=ActionKind.PRODUCTION_ACCESS,
@@ -131,8 +145,14 @@ def test_v020_autonomous_new_target_requires_complete_contract_revision() -> Non
     assert decision.required_gate == "contract_revision"
 
 
-def test_v020_autonomous_new_permission_requires_revision() -> None:
-    data = autonomous_risk_contract_data("network")
+@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
+def test_bound_autonomous_new_permission_requires_revision(
+    protocol_version: str,
+) -> None:
+    data = autonomous_risk_contract_data(
+        "network",
+        protocol_version=protocol_version,
+    )
     data["permissions"]["network"] = True
     decision = approved_policy(data).evaluate(
         ActionRequest(
@@ -146,9 +166,8 @@ def test_v020_autonomous_new_permission_requires_revision() -> None:
     assert decision.required_gate == "contract_revision"
 
 
-def platform_state_contract_data() -> dict:
-    data = valid_contract_data()
-    data["mode"] = "autonomous"
+def platform_state_contract_data(protocol_version: str = "0.3.0") -> dict:
+    data = valid_contract_data(protocol_version=protocol_version)
     data["risk_level"] = "medium"
     data["human_gates"] = ["contract_approval"]
     data["authorized_operations"] = [
@@ -166,19 +185,22 @@ def platform_state_contract_data() -> dict:
     return data
 
 
-def test_platform_state_requires_an_exact_bound_risk_grant() -> None:
+@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
+def test_platform_state_requires_an_exact_bound_risk_grant(
+    protocol_version: str,
+) -> None:
     target = "codex-goal:create:/work/project/.loop-runs/loop-example"
-    exact = approved_policy(platform_state_contract_data()).evaluate(
+    exact = approved_policy(platform_state_contract_data(protocol_version)).evaluate(
         ActionRequest(kind=ActionKind.PLATFORM_STATE, target=target)
     )
 
-    missing_data = platform_state_contract_data()
+    missing_data = platform_state_contract_data(protocol_version)
     missing_data["authorized_operations"] = []
     missing = approved_policy(missing_data).evaluate(
         ActionRequest(kind=ActionKind.PLATFORM_STATE, target=target)
     )
 
-    changed = approved_policy(platform_state_contract_data()).evaluate(
+    changed = approved_policy(platform_state_contract_data(protocol_version)).evaluate(
         ActionRequest(
             kind=ActionKind.PLATFORM_STATE,
             target="codex-goal:create:/work/project/.loop-runs/loop-other",
@@ -191,11 +213,14 @@ def test_platform_state_requires_an_exact_bound_risk_grant() -> None:
         assert decision.required_gate == "contract_revision"
 
 
-def test_platform_state_rejects_a_stale_contract_approval() -> None:
-    data = platform_state_contract_data()
+@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
+def test_platform_state_rejects_a_stale_contract_approval(
+    protocol_version: str,
+) -> None:
+    data = platform_state_contract_data(protocol_version)
     contract = LoopContract.model_validate(data)
     stale = ContractAuthorization(
-        protocol_version="0.2.0",
+        protocol_version=protocol_version,
         contract_version=contract.contract_version,
         contract_sha256="0" * 64,
         accepted_risk_ids=["RISK-1"],
@@ -212,20 +237,25 @@ def test_platform_state_rejects_a_stale_contract_approval() -> None:
     assert decision.required_gate == "contract_approval"
 
 
-def test_v020_collaborative_keeps_fresh_production_human_gate() -> None:
-    data = autonomous_risk_contract_data()
-    data["mode"] = "collaborative"
-    data["human_gates"].append("final_acceptance")
-    decision = approved_policy(data).evaluate(
+def test_authorization_for_another_protocol_does_not_grant_write_access() -> None:
+    contract = LoopContract.model_validate(valid_contract_data(protocol_version="0.3.0"))
+    mismatched = ContractAuthorization(
+        protocol_version="0.2.0",
+        contract_version=contract.contract_version,
+        contract_sha256=contract_fingerprint(contract),
+        accepted_risk_ids=[],
+    )
+
+    decision = GatePolicy(contract, authorization=mismatched).evaluate(
         ActionRequest(
-            kind=ActionKind.PRODUCTION_ACCESS,
+            kind=ActionKind.FILE_WRITE,
             repository_id="target",
-            target="production/customer-index",
+            target="src/app.py",
         )
     )
 
     assert decision.outcome is GateOutcome.PAUSE
-    assert decision.required_gate == "dangerous_action"
+    assert decision.required_gate == "contract_approval"
 
 
 def test_system_permission_and_global_package_changes_pause() -> None:

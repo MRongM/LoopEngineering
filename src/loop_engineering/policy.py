@@ -3,7 +3,7 @@ from enum import StrEnum
 from pydantic import Field, model_validator
 
 from loop_engineering.contract import contract_fingerprint
-from loop_engineering.models.contract import ControlMode, LoopContract, StrictModel
+from loop_engineering.models.contract import LoopContract, StrictModel
 from loop_engineering.models.run import ContractAuthorization
 from loop_engineering.paths import is_allowed_path
 
@@ -85,10 +85,7 @@ class GatePolicy:
 
     @property
     def _uses_autonomous_risk_grant(self) -> bool:
-        return (
-            self.contract.protocol_version == "0.2.0"
-            and self.contract.mode is ControlMode.AUTONOMOUS
-        )
+        return self.contract.protocol_version in {"0.2.0", "0.3.0"}
 
     def _pause(
         self,
@@ -119,7 +116,8 @@ class GatePolicy:
             if operation.risk_id is not None
         )
         return (
-            self.authorization.contract_version == self.contract.contract_version
+            self.authorization.protocol_version == self.contract.protocol_version
+            and self.authorization.contract_version == self.contract.contract_version
             and self.authorization.contract_sha256
             == contract_fingerprint(self.contract)
             and self.authorization.accepted_risk_ids == expected_risk_ids

@@ -2,13 +2,13 @@ from pathlib import Path
 from typing import Any
 
 
-def valid_contract_data(*, protocol_version: str = "0.2.0") -> dict[str, Any]:
+def valid_contract_data(*, protocol_version: str = "0.3.0") -> dict[str, Any]:
     return {
         "loop_id": "loop-example-001",
         "contract_version": 1,
         "protocol_version": protocol_version,
         "objective": "Add one verified example behavior",
-        "mode": "collaborative",
+        "mode": "autonomous",
         "repositories": [
             {
                 "id": "target",
@@ -66,7 +66,7 @@ def valid_contract_data(*, protocol_version: str = "0.2.0") -> dict[str, Any]:
             "max_checker_revisions": 0,
             "max_same_strategy_retries": 1,
         },
-        "human_gates": ["contract_approval", "final_acceptance"],
+        "human_gates": ["contract_approval"],
         "assumptions": ["The repository uses Python"],
         "stop_conditions": ["done", "blocked", "budget_exhausted"],
     }
@@ -74,8 +74,10 @@ def valid_contract_data(*, protocol_version: str = "0.2.0") -> dict[str, Any]:
 
 def autonomous_risk_contract_data(
     kind: str = "production_access",
+    *,
+    protocol_version: str = "0.3.0",
 ) -> dict[str, Any]:
-    data = valid_contract_data()
+    data = valid_contract_data(protocol_version=protocol_version)
     data["mode"] = "autonomous"
     data["risk_level"] = "high"
     data["human_gates"] = ["contract_approval"]

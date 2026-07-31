@@ -30,7 +30,7 @@ def _checkout(
     script.parent.mkdir(parents=True)
     shutil.copy2(MANAGER, script)
     (repository / "PROTOCOL.md").write_text(
-        "# Loop Engineering Core Protocol 0.2.0\n",
+        "# Loop Engineering Core Protocol 0.3.0\n",
         encoding="utf-8",
     )
     shutil.copy2(SKILL, repository / "adapters" / "codex" / "SKILL.md")
@@ -38,7 +38,13 @@ def _checkout(
     openai_metadata.parent.mkdir()
     shutil.copy2(OPENAI_METADATA, openai_metadata)
     (repository / "pyproject.toml").write_text(
-        '[project]\nname = "loop-engineering"\n',
+        """[project]
+name = "loop-engineering"
+version = "0.3.0"
+
+[project.scripts]
+loop-engine = "loop_engineering.cli:main"
+""",
         encoding="utf-8",
     )
     (repository / ".git").mkdir()
@@ -54,6 +60,43 @@ def _load_manager(script: Path, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     monkeypatch.setitem(sys.modules, name, module)
     spec.loader.exec_module(module)
     return module
+
+
+def _write_v030_checkout_markers(repository: Path) -> None:
+    (repository / "PROTOCOL.md").write_text(
+        "# Loop Engineering Core Protocol 0.3.0\n",
+        encoding="utf-8",
+    )
+    skill = repository / "adapters" / "codex" / "SKILL.md"
+    skill.write_text(
+        skill.read_text(encoding="utf-8").replace(
+            "Compatible Core: >=0.2,<0.3",
+            "Compatible Core: >=0.3,<0.4",
+        ),
+        encoding="utf-8",
+    )
+    (repository / "pyproject.toml").write_text(
+        """[project]
+name = "loop-engineering"
+version = "0.3.0"
+
+[project.scripts]
+loop-engine = "loop_engineering.cli:main"
+""",
+        encoding="utf-8",
+    )
+
+
+def _use_v030_markers(
+    manager: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        manager,
+        "PROTOCOL_HEADER",
+        "# Loop Engineering Core Protocol 0.3.0",
+    )
+    monkeypatch.setattr(manager, "CORE_COMPATIBILITY", "Compatible Core: >=0.3,<0.4")
 
 
 def _stub_commands(
@@ -74,12 +117,25 @@ def _stub_commands(
     after_pull: Callable[[], None] | None = None,
     uv_returncode: int = 0,
     uv_stderr: str = "",
+    cli_version: str = "0.3.0\n",
+    legacy_aliases: tuple[str, ...] = (),
+    cli_remains_after_uninstall: bool = False,
 ) -> list[tuple[list[str], dict[str, object]]]:
     calls: list[tuple[list[str], dict[str, object]]] = []
     executables = {"git": "/tools/git", "uv": "/tools/uv"}
+    cli_path = "/tools/loop-engine"
+    cli_state = {"installed": True}
     expected_git_dir = manager._repository_root() / ".git"
     resolved_git_metadata = git_metadata or f"{expected_git_dir}\n{expected_git_dir}\n"
-    monkeypatch.setattr(manager.shutil, "which", executables.get)
+
+    def which(name: str) -> str | None:
+        if name == "loop-engine":
+            return cli_path if cli_state["installed"] else None
+        if name in legacy_aliases:
+            return f"/tools/{name}"
+        return executables.get(name)
+
+    monkeypatch.setattr(manager.shutil, "which", which)
 
     def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append((argv, kwargs))
@@ -122,11 +178,22 @@ def _stub_commands(
                 stderr=stderr,
             )
         if argv[0] == executables["uv"]:
+            if argv[1:3] == ["tool", "install"] and uv_returncode == 0:
+                cli_state["installed"] = True
+            if argv[1:3] == ["tool", "uninstall"] and not cli_remains_after_uninstall:
+                cli_state["installed"] = False
             return subprocess.CompletedProcess(
                 argv,
                 uv_returncode,
                 stdout="",
                 stderr=uv_stderr,
+            )
+        if argv[0] == cli_path:
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                stdout=cli_version,
+                stderr="",
             )
         raise AssertionError(f"unexpected executable: {argv[0]}")
 
@@ -147,6 +214,86 @@ def test_lifecycle_manager_exposes_install_update_and_uninstall_commands() -> No
     assert "{install,update,uninstall}" in result.stdout
 
 
+def test_lifecycle_manager_separates_distribution_checkout_skill_and_cli_names(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, _, script = _checkout(tmp_path)
+    manager = _load_manager(script, monkeypatch)
+
+    assert manager.DISTRIBUTION_NAME == "loop-engineering"
+    assert manager.SKILL_CHECKOUT_NAME == "loop-engineering"
+    assert manager.CODEX_SKILL_NAME == "loop-engine"
+    assert manager.CLI_NAME == "loop-engine"
+    assert manager.LEGACY_CLI_NAMES == ("loop-engineering", "loop-agent")
+
+
+def test_install_accepts_v030_checkout_and_probes_loop_engine(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home, repository, script = _checkout(tmp_path)
+    _write_v030_checkout_markers(repository)
+    manager = _load_manager(script, monkeypatch)
+    _use_v030_markers(manager, monkeypatch)
+    calls = _stub_commands(manager, monkeypatch)
+
+    assert manager.main(["install", "--codex-home", str(codex_home)]) == 0
+    assert calls[-1][0] == ["/tools/loop-engine", "--version"]
+
+
+@pytest.mark.parametrize("legacy_name", ["loop-engineering", "loop-agent"])
+def test_install_rejects_a_discoverable_legacy_cli_alias(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    legacy_name: str,
+) -> None:
+    codex_home, repository, script = _checkout(tmp_path)
+    _write_v030_checkout_markers(repository)
+    manager = _load_manager(script, monkeypatch)
+    _use_v030_markers(manager, monkeypatch)
+    calls = _stub_commands(manager, monkeypatch, legacy_aliases=(legacy_name,))
+
+    assert manager.main(["install", "--codex-home", str(codex_home)]) == 2
+    assert any(argv[1:3] == ["tool", "install"] for argv, _ in calls)
+    assert repository.exists()
+
+
+@pytest.mark.parametrize("cli_version", ["0.2.0\n", "unexpected output\n"])
+def test_install_rejects_a_wrong_loop_engine_version(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cli_version: str,
+) -> None:
+    codex_home, repository, script = _checkout(tmp_path)
+    _write_v030_checkout_markers(repository)
+    manager = _load_manager(script, monkeypatch)
+    _use_v030_markers(manager, monkeypatch)
+    calls = _stub_commands(manager, monkeypatch, cli_version=cli_version)
+
+    assert manager.main(["install", "--codex-home", str(codex_home)]) == 2
+    assert any(argv[1:3] == ["tool", "install"] for argv, _ in calls)
+    assert repository.exists()
+
+
+@pytest.mark.parametrize("legacy_script", ["loop-engineering", "loop-agent"])
+def test_install_rejects_checkout_metadata_with_a_legacy_script(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    legacy_script: str,
+) -> None:
+    codex_home, repository, script = _checkout(tmp_path)
+    _write_v030_checkout_markers(repository)
+    with (repository / "pyproject.toml").open("a", encoding="utf-8") as handle:
+        handle.write(f'{legacy_script} = "loop_engineering.cli:main"\n')
+    manager = _load_manager(script, monkeypatch)
+    _use_v030_markers(manager, monkeypatch)
+    calls = _stub_commands(manager, monkeypatch)
+
+    assert manager.main(["install", "--codex-home", str(codex_home)]) == 2
+    assert calls == []
+
+
 def test_install_uses_exact_uv_argv_without_a_shell(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -165,7 +312,16 @@ def test_install_uses_exact_uv_argv_without_a_shell(
                 "shell": False,
                 "text": True,
             },
-        )
+        ),
+        (
+            ["/tools/loop-engine", "--version"],
+            {
+                "capture_output": True,
+                "check": False,
+                "shell": False,
+                "text": True,
+            },
+        ),
     ]
 
 
@@ -191,7 +347,7 @@ def test_install_rejects_a_skill_name_found_only_outside_frontmatter(
 ) -> None:
     codex_home, repository, script = _checkout(tmp_path)
     (repository / "adapters" / "codex" / "SKILL.md").write_text(
-        "---\nname: wrong-name\n---\n\nname: loop-engine\n\nCompatible Core: >=0.2,<0.3\n",
+        "---\nname: wrong-name\n---\n\nname: loop-engine\n\nCompatible Core: >=0.3,<0.4\n",
         encoding="utf-8",
     )
     manager = _load_manager(script, monkeypatch)
@@ -407,6 +563,7 @@ def test_update_fast_forwards_official_master_and_reinstalls_cli(
             "FETCH_HEAD",
         ],
         ["/tools/uv", "tool", "install", "--reinstall", str(repository)],
+        ["/tools/loop-engine", "--version"],
     ]
 
 
@@ -435,13 +592,14 @@ def test_legacy_manager_revalidates_the_first_short_name_update(
     calls = _stub_commands(manager, monkeypatch, after_pull=apply_short_name_update)
 
     assert manager.main(["update", "--codex-home", str(codex_home)]) == 0
-    assert calls[-1][0] == [
+    assert calls[-2][0] == [
         "/tools/uv",
         "tool",
         "install",
         "--reinstall",
         str(repository),
     ]
+    assert calls[-1][0] == ["/tools/loop-engine", "--version"]
 
 
 @pytest.mark.parametrize(
@@ -756,3 +914,19 @@ def test_uninstall_removes_only_the_validated_checkout_after_cli_is_absent(
     assert not repository.exists()
     assert sibling.is_dir()
     assert calls[-1][0][0] == "/tools/git"
+
+
+def test_uninstall_retains_checkout_when_loop_engine_remains_discoverable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home, repository, script = _checkout(tmp_path)
+    _write_v030_checkout_markers(repository)
+    manager = _load_manager(script, monkeypatch)
+    _use_v030_markers(manager, monkeypatch)
+    calls = _stub_commands(manager, monkeypatch, cli_remains_after_uninstall=True)
+    monkeypatch.chdir(tmp_path)
+
+    assert manager.main(["uninstall", "--codex-home", str(codex_home), "--yes"]) == 2
+    assert any(argv[1:3] == ["tool", "uninstall"] for argv, _ in calls)
+    assert repository.exists()

@@ -7,13 +7,17 @@ import tomllib
 from collections.abc import Sequence
 from pathlib import Path
 
-TOOL_NAME = "loop-engineering"
+DISTRIBUTION_NAME = "loop-engineering"
+SKILL_CHECKOUT_NAME = "loop-engineering"
 CODEX_SKILL_NAME = "loop-engine"
+CLI_NAME = "loop-engine"
+LEGACY_CLI_NAMES = ("loop-engineering", "loop-agent")
+PACKAGE_VERSION = "0.3.0"
 CODEX_INVOCATION_POLICY = "policy:\n  allow_implicit_invocation: true\n"
 OFFICIAL_REPOSITORY = "https://github.com/MRongM/LoopEngineering.git"
 MANAGED_BRANCH = "master"
-PROTOCOL_HEADER = "# Loop Engineering Core Protocol 0.2.0"
-CORE_COMPATIBILITY = "Compatible Core: >=0.2,<0.3"
+PROTOCOL_HEADER = "# Loop Engineering Core Protocol 0.3.0"
+CORE_COMPATIBILITY = "Compatible Core: >=0.3,<0.4"
 ERROR = 2
 CONFIRMATION_REQUIRED = 3
 
@@ -65,7 +69,7 @@ def _is_link_like(path: Path) -> bool:
 
 
 def _validate_checkout(codex_home: Path) -> Path:
-    expected = codex_home / "skills" / TOOL_NAME
+    expected = codex_home / "skills" / SKILL_CHECKOUT_NAME
     for managed_path in (codex_home, expected.parent, expected):
         if _is_link_like(managed_path):
             raise LifecycleError("managed lifecycle commands do not operate through links")
@@ -104,7 +108,13 @@ def _validate_checkout(codex_home: Path) -> Path:
         raise LifecycleError("Skill checkout adapter marker does not match")
     if invocation_policy_text != CODEX_INVOCATION_POLICY:
         raise LifecycleError("Skill checkout invocation policy does not match")
-    if project_data.get("project", {}).get("name") != TOOL_NAME:
+    project_metadata = project_data.get("project", {})
+    if (
+        project_metadata.get("name") != DISTRIBUTION_NAME
+        or project_metadata.get("version") != PACKAGE_VERSION
+        or project_metadata.get("scripts")
+        != {CLI_NAME: "loop_engineering.cli:main"}
+    ):
         raise LifecycleError("Skill checkout package marker does not match")
     return repository
 
@@ -126,6 +136,27 @@ def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _verify_installed_cli() -> None:
+    result = _run([_executable(CLI_NAME), "--version"])
+    if result.returncode != 0 or result.stdout.splitlines() != [PACKAGE_VERSION]:
+        raise LifecycleError(
+            f"installed {CLI_NAME} executable does not report {PACKAGE_VERSION}"
+        )
+    legacy = [name for name in LEGACY_CLI_NAMES if shutil.which(name) is not None]
+    if legacy:
+        raise LifecycleError(f"legacy CLI alias remains discoverable: {legacy[0]}")
+
+
+def _verify_uninstalled_cli() -> None:
+    remaining = [
+        name
+        for name in (CLI_NAME, *LEGACY_CLI_NAMES)
+        if shutil.which(name) is not None
+    ]
+    if remaining:
+        raise LifecycleError(f"CLI executable remains discoverable: {remaining[0]}")
+
+
 def _install(repository: Path, *, reinstall: bool = False) -> None:
     argv = [_executable("uv"), "tool", "install"]
     if reinstall:
@@ -139,8 +170,12 @@ def _install(repository: Path, *, reinstall: bool = False) -> None:
             else "the Skill checkout was retained"
         )
         raise LifecycleError(f"uv tool install failed; {retained}")
+    _verify_installed_cli()
     action = "Reinstalled" if reinstall else "Installed"
-    print(f"{action} {TOOL_NAME} CLI from {repository}")
+    print(
+        f"{action} {CLI_NAME} executable from "
+        f"{DISTRIBUTION_NAME} distribution at {repository}"
+    )
 
 
 def _ensure_outside(repository: Path) -> None:
@@ -301,7 +336,7 @@ def _update(codex_home: Path, repository: Path) -> None:
     _ensure_update_source(repository)
     _ensure_updated_head(repository)
     _install(repository, reinstall=True)
-    print(f"Updated {TOOL_NAME} Skill checkout at {repository}")
+    print(f"Updated {CODEX_SKILL_NAME} Skill checkout at {repository}")
 
 
 def _already_uninstalled(result: subprocess.CompletedProcess[str]) -> bool:
@@ -312,16 +347,19 @@ def _already_uninstalled(result: subprocess.CompletedProcess[str]) -> bool:
         if line.strip()
     ]
     return result.returncode == 2 and output_lines == [
-        "error: `loop-engineering` is not installed"
+        f"error: `{DISTRIBUTION_NAME}` is not installed"
     ]
 
 
 def _uninstall(codex_home: Path, repository: Path) -> None:
     _ensure_outside(repository)
     _ensure_clean(repository)
-    result = _run([_executable("uv"), "tool", "uninstall", TOOL_NAME])
+    result = _run(
+        [_executable("uv"), "tool", "uninstall", DISTRIBUTION_NAME]
+    )
     if result.returncode != 0 and not _already_uninstalled(result):
         raise LifecycleError("uv tool uninstall failed; the Skill checkout was retained")
+    _verify_uninstalled_cli()
 
     # Revalidate immediately before recursive removal so a changed target fails closed.
     repository = _validate_checkout(codex_home)
@@ -333,7 +371,10 @@ def _uninstall(codex_home: Path, repository: Path) -> None:
         raise LifecycleError(
             f"CLI is absent, but could not remove the Skill checkout: {repository}"
         ) from error
-    print(f"Uninstalled {TOOL_NAME} CLI and removed {repository}")
+    print(
+        f"Uninstalled {DISTRIBUTION_NAME} distribution, removed {CLI_NAME} "
+        f"executable, and removed {repository}"
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:

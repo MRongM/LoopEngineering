@@ -1,10 +1,33 @@
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 from loop_engineering.cli import main
 from tests.factories import autonomous_risk_contract_data, valid_contract_data
+
+
+def test_cli_help_uses_unique_name_and_keeps_every_command_group(capsys) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--help"])
+
+    assert exit_info.value.code == 0
+    help_text = capsys.readouterr().out
+    assert help_text.startswith("usage: loop-engine ")
+    for group in (
+        "project",
+        "contract",
+        "schema",
+        "run",
+        "evidence",
+        "budget",
+        "completion",
+        "gate",
+        "scope",
+        "git",
+    ):
+        assert group in help_text
 
 
 def test_cli_validates_contract_and_exports_schemas(tmp_path: Path, capsys) -> None:
@@ -156,7 +179,10 @@ def test_cli_requires_contract_approval_before_planning(
     assert main(planning) == 0
 
 
-def test_cli_gate_check_returns_pause_for_production(tmp_path: Path, capsys) -> None:
+def test_cli_gate_check_requires_bound_approval_for_v030_production(
+    tmp_path: Path,
+    capsys,
+) -> None:
     contract = tmp_path / "contract.yaml"
     contract.write_text(yaml.safe_dump(valid_contract_data(), sort_keys=False))
     request = tmp_path / "request.json"
@@ -168,6 +194,31 @@ def test_cli_gate_check_returns_pause_for_production(tmp_path: Path, capsys) -> 
     assert main(["gate", "check", str(contract), str(request)]) == 0
     output = json.loads(capsys.readouterr().out)
     assert output["outcome"] == "pause"
+    assert output["required_gate"] == "contract_approval"
+    assert "confirmation" not in output
+
+
+def test_cli_gate_check_returns_confirmation_for_legacy_production(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    contract = tmp_path / "contract.yaml"
+    contract.write_text(
+        yaml.safe_dump(
+            valid_contract_data(protocol_version="0.1.0"),
+            sort_keys=False,
+        )
+    )
+    request = tmp_path / "request.json"
+    request.write_text(
+        json.dumps({"kind": "production_access", "target": "production"}),
+        encoding="utf-8",
+    )
+
+    assert main(["gate", "check", str(contract), str(request)]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["outcome"] == "pause"
+    assert output["required_gate"] == "dangerous_action"
     assert output["confirmation"].startswith("⚠️ 危险操作检测！")
 
 
@@ -216,7 +267,7 @@ def test_cli_gate_check_uses_bound_run_authorization_for_autonomous_risk(
     assert "confirmation" not in output
 
 
-def test_cli_direct_v020_contract_cannot_prove_risk_approval(
+def test_cli_direct_bound_contract_cannot_prove_risk_approval(
     tmp_path: Path,
     capsys,
 ) -> None:

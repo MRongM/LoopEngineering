@@ -16,11 +16,30 @@ def create_store(tmp_path: Path) -> RunStore:
     return RunStore.create(tmp_path, contract)
 
 
-def create_risk_store(tmp_path: Path) -> RunStore:
-    data = autonomous_risk_contract_data()
+def create_risk_store(
+    tmp_path: Path,
+    *,
+    protocol_version: str = "0.3.0",
+) -> RunStore:
+    data = autonomous_risk_contract_data(protocol_version=protocol_version)
     data["repositories"][0]["path"] = str(tmp_path)
     contract = LoopContract.model_validate(data)
     return RunStore.create(tmp_path, contract)
+
+
+def create_version_store(tmp_path: Path, protocol_version: str) -> RunStore:
+    data = valid_contract_data(protocol_version=protocol_version)
+    data["repositories"][0]["path"] = str(tmp_path)
+    return RunStore.create(tmp_path, LoopContract.model_validate(data))
+
+
+def move_to_awaiting_approval(store: RunStore) -> None:
+    for target in (
+        LoopStatus.DISCOVERING,
+        LoopStatus.CONTRACT_DRAFTING,
+        LoopStatus.AWAITING_APPROVAL,
+    ):
+        store.record_transition(actor="maker", target=target, reason=target.value)
 
 
 def test_events_are_monotonic_and_secrets_are_redacted(tmp_path: Path) -> None:
@@ -79,6 +98,19 @@ def test_open_detects_contract_state_version_mismatch(tmp_path: Path) -> None:
         RunStore.open(store.run_dir)
 
 
+def test_open_rejects_a_persisted_collaborative_run(tmp_path: Path) -> None:
+    store = create_store(tmp_path)
+    raw = yaml.safe_load(store.contract_path.read_text(encoding="utf-8"))
+    raw["mode"] = "collaborative"
+    store.contract_path.write_text(
+        yaml.safe_dump(raw, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="collaborative control mode is unsupported"):
+        RunStore.open(store.run_dir)
+
+
 def test_result_updates_progress_and_strategy_counters(tmp_path: Path) -> None:
     store = create_store(tmp_path)
     action_id = store.record_intent(actor="maker", summary="attempt", payload={})
@@ -122,10 +154,12 @@ def test_result_must_match_one_unresolved_intent(tmp_path: Path) -> None:
         )
 
 
-def test_v020_contract_approval_binds_version_hash_and_risk_ids(
+@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
+def test_bound_contract_approval_records_version_hash_and_risk_ids(
     tmp_path: Path,
+    protocol_version: str,
 ) -> None:
-    store = create_risk_store(tmp_path)
+    store = create_risk_store(tmp_path, protocol_version=protocol_version)
 
     event = store.record_approval(
         actor="user",
@@ -134,7 +168,7 @@ def test_v020_contract_approval_binds_version_hash_and_risk_ids(
         summary="accepted all disclosed risks",
     )
 
-    assert event.payload["protocol_version"] == "0.2.0"
+    assert event.payload["protocol_version"] == protocol_version
     assert event.payload["contract_version"] == 1
     assert len(event.payload["contract_sha256"]) == 64
     assert event.payload["accepted_risk_ids"] == ["RISK-1"]
@@ -144,10 +178,15 @@ def test_v020_contract_approval_binds_version_hash_and_risk_ids(
     assert authorization.accepted_risk_ids == ["RISK-1"]
 
 
-def test_v020_rejected_or_tampered_contract_has_no_authorization(
+@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
+def test_rejected_or_tampered_bound_contract_has_no_authorization(
     tmp_path: Path,
+    protocol_version: str,
 ) -> None:
-    rejected = create_risk_store(tmp_path / "rejected")
+    rejected = create_risk_store(
+        tmp_path / "rejected",
+        protocol_version=protocol_version,
+    )
     rejected.record_approval(
         actor="user",
         gate="contract_approval",
@@ -156,7 +195,10 @@ def test_v020_rejected_or_tampered_contract_has_no_authorization(
     )
     assert rejected.current_contract_authorization() is None
 
-    tampered = create_risk_store(tmp_path / "tampered")
+    tampered = create_risk_store(
+        tmp_path / "tampered",
+        protocol_version=protocol_version,
+    )
     tampered.record_approval(
         actor="user",
         gate="contract_approval",
@@ -190,26 +232,26 @@ def test_legacy_contract_approval_payload_remains_unbound(tmp_path: Path) -> Non
     assert store.current_contract_authorization() is None
 
 
-def test_contract_authorization_rejects_noncanonical_risk_id() -> None:
+@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
+def test_contract_authorization_rejects_noncanonical_risk_id(
+    protocol_version: str,
+) -> None:
     with pytest.raises(ValidationError, match="RISK-<positive-number>"):
         ContractAuthorization(
-            protocol_version="0.2.0",
+            protocol_version=protocol_version,
             contract_version=1,
             contract_sha256="0" * 64,
             accepted_risk_ids=["RISK-0"],
         )
 
 
-def test_tampered_v020_contract_cannot_leave_awaiting_approval(
+@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
+def test_tampered_bound_contract_cannot_leave_awaiting_approval(
     tmp_path: Path,
+    protocol_version: str,
 ) -> None:
-    store = create_risk_store(tmp_path)
-    for target in (
-        LoopStatus.DISCOVERING,
-        LoopStatus.CONTRACT_DRAFTING,
-        LoopStatus.AWAITING_APPROVAL,
-    ):
-        store.record_transition(actor="maker", target=target, reason=target.value)
+    store = create_risk_store(tmp_path, protocol_version=protocol_version)
+    move_to_awaiting_approval(store)
     store.record_approval(
         actor="user",
         gate="contract_approval",
@@ -232,15 +274,18 @@ def test_tampered_v020_contract_cannot_leave_awaiting_approval(
         )
 
 
-def test_contract_revision_cannot_downgrade_v020_protocol(tmp_path: Path) -> None:
-    store = create_risk_store(tmp_path)
-    for target in (
-        LoopStatus.DISCOVERING,
-        LoopStatus.CONTRACT_DRAFTING,
-        LoopStatus.AWAITING_APPROVAL,
-    ):
-        store.record_transition(actor="maker", target=target, reason=target.value)
-    revised_data = valid_contract_data(protocol_version="0.1.0")
+@pytest.mark.parametrize(
+    ("current_version", "revised_version"),
+    [("0.2.0", "0.1.0"), ("0.3.0", "0.2.0"), ("0.3.0", "0.1.0")],
+)
+def test_contract_revision_rejects_every_protocol_downgrade(
+    tmp_path: Path,
+    current_version: str,
+    revised_version: str,
+) -> None:
+    store = create_version_store(tmp_path, current_version)
+    move_to_awaiting_approval(store)
+    revised_data = valid_contract_data(protocol_version=revised_version)
     revised_data["loop_id"] = "loop-example-001"
     revised_data["contract_version"] = 2
     revised = LoopContract.model_validate(revised_data)
@@ -251,3 +296,29 @@ def test_contract_revision_cannot_downgrade_v020_protocol(tmp_path: Path) -> Non
             actor="user",
             summary="must not downgrade safety semantics",
         )
+
+
+@pytest.mark.parametrize(
+    ("current_version", "revised_version"),
+    [("0.1.0", "0.2.0"), ("0.1.0", "0.3.0"), ("0.2.0", "0.3.0")],
+)
+def test_contract_revision_allows_upgrade_with_fresh_bound_approval(
+    tmp_path: Path,
+    current_version: str,
+    revised_version: str,
+) -> None:
+    store = create_version_store(tmp_path, current_version)
+    move_to_awaiting_approval(store)
+    revised_data = valid_contract_data(protocol_version=revised_version)
+    revised_data["contract_version"] = 2
+
+    state = store.replace_contract(
+        LoopContract.model_validate(revised_data),
+        actor="user",
+        summary="approve upgraded safety semantics",
+    )
+
+    authorization = store.current_contract_authorization()
+    assert state.contract_version == 2
+    assert authorization is not None
+    assert authorization.protocol_version == revised_version

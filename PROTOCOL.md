@@ -1,4 +1,4 @@
-# Loop Engineering Core Protocol 0.2.0
+# Loop Engineering Core Protocol 0.3.0
 
 ## Normative terms
 
@@ -9,10 +9,14 @@ enforce every MUST/MUST NOT rule and MUST reject incompatible protocol versions.
 
 - Read-only questions MAY use investigate-verify-report without a run.
 - Every state-changing task MUST create a Loop Contract.
-- Mode MUST be collaborative or autonomous, MUST NOT be inherited, and defaults to collaborative.
+- Mode MUST be autonomous and MUST NOT be inherited. A 0.3.0 contract that omits
+  mode defaults to autonomous. A 0.1.0/0.2.0 contract MUST explicitly declare
+  autonomous; collaborative and ambiguous legacy contracts MUST be rejected.
 - Autonomous execution MUST NOT start before explicit contract approval.
-- Autonomous 0.2.0 contract approval MUST include acceptance of every disclosed risk.
-- Every Autonomous 0.2.0 action MUST be checked against the matching bound approval.
+- Autonomous 0.2.0/0.3.0 contract approval MUST include acceptance of every
+  disclosed risk.
+- Every Autonomous 0.2.0/0.3.0 action MUST be checked against the matching bound
+  approval.
 
 ## Contract
 
@@ -22,12 +26,13 @@ human gates, assumptions and stop conditions. Objective, scope, acceptance,
 dangerous permissions, repository targets, Git targets or budget expansion MUST
 create a new contract version and pause execution.
 
-Every 0.2.0 authorized operation MUST have a unique risk ID, exact kind and target,
-risk level, impact, worst case, recovery and evidence. Production and sensitive-data
-operations MUST be high risk and MUST have their corresponding category permission.
-High-risk Autonomous contracts MUST contain at least one high-risk disclosure. Every
-planned dangerous, production, sensitive-data and Git mutation MUST be disclosed
-before approval; ordinary scoped actions remain bounded by repositories and paths.
+Every 0.2.0/0.3.0 authorized operation MUST have a unique risk ID, exact kind and
+target, risk level, impact, worst case, recovery and evidence. Production and
+sensitive-data operations MUST be high risk and MUST have their corresponding
+category permission. High-risk Autonomous contracts MUST contain at least one
+high-risk disclosure. Every planned dangerous, production, sensitive-data and Git
+mutation MUST be disclosed before approval; ordinary scoped actions remain bounded
+by repositories and paths.
 
 Rule priority is: platform safety and the latest explicit user instruction; the
 approved Loop Contract; applicable `AGENTS.md`; repository architecture/testing
@@ -53,9 +58,8 @@ capture evidence, invoke Checker when required, and decide the next state.
 - Validation MUST use argv execution with shell disabled.
 - Tests MUST NOT be removed, weakened, skipped or hidden to claim success.
 - Medium/high risk MUST receive independent Checker ACCEPT.
-- Collaborative runs MUST receive final human acceptance.
-- Autonomous 0.2.0 MUST NOT add final human acceptance solely because risk is high;
-  an explicitly declared final gate still applies.
+- Autonomous 0.2.0/0.3.0 MUST NOT add final human acceptance solely because risk
+  is high; an explicitly declared final gate still applies.
 - Legacy 0.1.0 high-risk Autonomous runs MUST retain their final human gate.
 
 ## Failure, recovery and budgets
@@ -77,9 +81,10 @@ Events MUST include monotonic intent/result pairs, transitions, approvals, Check
 verdicts and external side-effect identifiers. Runtime data MUST be ignored by Git
 by default and MUST NOT contain secrets or full model reasoning.
 
-An approved 0.2.0 `contract_approval` or `contract_revision` event MUST bind the
-current `contract_version`, canonical `contract_sha256` and complete
-`accepted_risk_ids`. A stale, incomplete or mismatched binding grants no authority.
+An approved 0.2.0/0.3.0 `contract_approval` or `contract_revision` event MUST bind
+the current `protocol_version`, `contract_version`, canonical `contract_sha256` and
+complete `accepted_risk_ids`. A stale, incomplete or mismatched binding grants no
+authority.
 
 ## Safety
 
@@ -87,12 +92,13 @@ current `contract_version`, canonical `contract_sha256` and complete
 - Secrets, tokens, sensitive responses and full model reasoning MUST NOT be persisted.
 - Unmatched intent events MUST be reconciled against real external state before retry.
 - Force-push, history rewriting, reset --hard, automatic merge and automatic deployment are forbidden.
-- Production and sensitive-data operations in Autonomous 0.2.0 MAY proceed without
-  another human gate only when their exact risk is present in the current contract,
-  the category permission is true, and the run ledger contains the matching bound
-  approval. Collaborative and legacy 0.1.0 runs require a fresh human gate.
-- A new operation, target, permission or risk in Autonomous 0.2.0 MUST pause for one
-  complete `contract_revision`; it MUST NOT be approved as an isolated danger prompt.
+- Production and sensitive-data operations in Autonomous 0.2.0/0.3.0 MAY proceed
+  without another human gate only when their exact risk is present in the current
+  contract, the category permission is true, and the run ledger contains the matching
+  bound approval. Legacy 0.1.0 runs require a fresh human gate.
+- A new operation, target, permission or risk in Autonomous 0.2.0/0.3.0 MUST pause
+  for one complete `contract_revision`; it MUST NOT be approved as an isolated
+  danger prompt.
 - Database changes require a forward plan, compatibility analysis and recovery strategy.
 - Unresolved variables, broad globs and workspace-root destructive targets are forbidden.
 - User changes of unknown origin MUST NOT be overwritten, reverted or deleted.
@@ -126,7 +132,8 @@ contract or global limit. Difficulty alone is not a terminal reason.
 
 ## Compatibility
 
-Core 0.2.0 MAY load 0.1.0 contracts only to preserve their original gate semantics.
-New templates and adapters MUST create 0.2.0 contracts. An active 0.1.0 run MUST NOT
-be silently upgraded; migration requires a new 0.2.0 contract version and explicit
-approval of its complete risk disclosure.
+Core 0.3.0 MAY load 0.1.0/0.2.0 contracts only when they explicitly declare
+autonomous, and MUST preserve their original version-specific gate semantics. New
+templates and adapters MUST create 0.3.0 contracts. An active legacy run MUST NOT be
+silently upgraded; migration requires a new 0.3.0 contract version and explicit
+approval of its complete risk disclosure. Protocol downgrades MUST be rejected.

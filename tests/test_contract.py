@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from types import MappingProxyType
 
 import pytest
 import yaml
@@ -10,20 +11,55 @@ from loop_engineering.models.contract import LoopContract
 from tests.factories import autonomous_risk_contract_data, valid_contract_data
 
 
-def test_valid_contract_is_strict_and_defaults_to_collaborative(tmp_path: Path) -> None:
-    data = valid_contract_data()
+def test_v030_contract_defaults_to_autonomous(tmp_path: Path) -> None:
+    data = valid_contract_data(protocol_version="0.3.0")
     data.pop("mode")
     path = tmp_path / "contract.yaml"
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
     contract = load_contract(path)
 
-    assert contract.mode.value == "collaborative"
-    assert contract.protocol_version == "0.2.0"
+    assert contract.mode.value == "autonomous"
+    assert contract.protocol_version == "0.3.0"
+
+
+@pytest.mark.parametrize("protocol_version", ["0.1.0", "0.2.0"])
+def test_legacy_contract_requires_explicit_autonomous_mode(
+    protocol_version: str,
+) -> None:
+    data = valid_contract_data(protocol_version=protocol_version)
+    data.pop("mode")
+
+    with pytest.raises(ValidationError, match="legacy contract requires explicit autonomous"):
+        LoopContract.model_validate(data)
+
+
+@pytest.mark.parametrize("protocol_version", ["0.1.0", "0.2.0"])
+def test_legacy_mapping_input_cannot_bypass_explicit_mode_requirement(
+    protocol_version: str,
+) -> None:
+    data = valid_contract_data(protocol_version=protocol_version)
+    data.pop("mode")
+
+    with pytest.raises(ValidationError, match="legacy contract requires explicit autonomous"):
+        LoopContract.model_validate(MappingProxyType(data))
+
+
+@pytest.mark.parametrize("protocol_version", ["0.1.0", "0.2.0", "0.3.0"])
+def test_collaborative_mode_is_rejected(protocol_version: str) -> None:
+    data = valid_contract_data(protocol_version=protocol_version)
+    data["mode"] = "collaborative"
+
+    with pytest.raises(
+        ValidationError,
+        match="collaborative control mode is unsupported",
+    ):
+        LoopContract.model_validate(data)
 
 
 def test_legacy_contract_remains_valid_without_risk_disclosures() -> None:
     data = valid_contract_data(protocol_version="0.1.0")
+    data["mode"] = "autonomous"
     data["authorized_operations"] = [
         {
             "kind": "file_delete",
@@ -38,7 +74,7 @@ def test_legacy_contract_remains_valid_without_risk_disclosures() -> None:
     assert contract.authorized_operations[0].kind == "file_delete"
 
 
-def test_autonomous_v020_accepts_disclosed_high_risk_without_final_gate() -> None:
+def test_bound_autonomous_accepts_disclosed_high_risk_without_final_gate() -> None:
     contract = LoopContract.model_validate(autonomous_risk_contract_data())
 
     assert contract.human_gates == ["contract_approval"]
@@ -49,7 +85,7 @@ def test_autonomous_v020_accepts_disclosed_high_risk_without_final_gate() -> Non
     "missing",
     ["risk_id", "risk_level", "impact", "worst_case", "recovery", "evidence"],
 )
-def test_v020_authorized_operation_requires_complete_risk_disclosure(
+def test_bound_authorized_operation_requires_complete_risk_disclosure(
     missing: str,
 ) -> None:
     data = autonomous_risk_contract_data()
@@ -59,7 +95,7 @@ def test_v020_authorized_operation_requires_complete_risk_disclosure(
         LoopContract.model_validate(data)
 
 
-def test_v020_risk_ids_must_be_unique() -> None:
+def test_bound_risk_ids_must_be_unique() -> None:
     data = autonomous_risk_contract_data()
     data["authorized_operations"].append(data["authorized_operations"][0].copy())
 
@@ -68,7 +104,7 @@ def test_v020_risk_ids_must_be_unique() -> None:
 
 
 @pytest.mark.parametrize("kind", ["production_access", "sensitive_data"])
-def test_v020_production_and_sensitive_risks_must_be_high(kind: str) -> None:
+def test_bound_production_and_sensitive_risks_must_be_high(kind: str) -> None:
     data = autonomous_risk_contract_data(kind)
     data["authorized_operations"][0]["risk_level"] = "medium"
 
@@ -76,7 +112,7 @@ def test_v020_production_and_sensitive_risks_must_be_high(kind: str) -> None:
         LoopContract.model_validate(data)
 
 
-def test_v020_sensitive_operation_requires_matching_permission() -> None:
+def test_bound_sensitive_operation_requires_matching_permission() -> None:
     data = autonomous_risk_contract_data("sensitive_data")
     data["permissions"]["sensitive_data"] = False
 
@@ -93,7 +129,7 @@ def test_v020_sensitive_operation_requires_matching_permission() -> None:
         ("database_change", "database_changes"),
     ],
 )
-def test_v020_authorized_operation_requires_category_permission(
+def test_bound_authorized_operation_requires_category_permission(
     kind: str,
     permission: str,
 ) -> None:
@@ -104,7 +140,7 @@ def test_v020_authorized_operation_requires_category_permission(
         LoopContract.model_validate(data)
 
 
-def test_v020_contract_risk_cannot_understate_operation_risk() -> None:
+def test_bound_contract_risk_cannot_understate_operation_risk() -> None:
     data = autonomous_risk_contract_data()
     data["risk_level"] = "medium"
     data["budget"]["max_checker_revisions"] = 2
@@ -117,7 +153,7 @@ def test_v020_contract_risk_cannot_understate_operation_risk() -> None:
     "target",
     ["production/*", "${PRODUCTION_TARGET}", "$PRODUCTION_TARGET", "[", "/"],
 )
-def test_v020_authorized_operation_requires_resolved_exact_target(
+def test_bound_authorized_operation_requires_resolved_exact_target(
     target: str,
 ) -> None:
     data = autonomous_risk_contract_data()
@@ -127,7 +163,7 @@ def test_v020_authorized_operation_requires_resolved_exact_target(
         LoopContract.model_validate(data)
 
 
-def test_v020_high_risk_autonomous_requires_a_high_risk_disclosure() -> None:
+def test_bound_high_risk_autonomous_requires_a_high_risk_disclosure() -> None:
     data = valid_contract_data()
     data["mode"] = "autonomous"
     data["risk_level"] = "high"
@@ -225,14 +261,6 @@ def test_network_validation_requires_network_permission() -> None:
         LoopContract.model_validate(data)
 
 
-def test_collaborative_contract_requires_final_acceptance_gate() -> None:
-    data = valid_contract_data()
-    data["human_gates"] = ["contract_approval"]
-
-    with pytest.raises(ValidationError, match="requires final_acceptance"):
-        LoopContract.model_validate(data)
-
-
 def test_every_contract_requires_one_contract_approval_gate() -> None:
     data = valid_contract_data()
     data["mode"] = "autonomous"
@@ -268,3 +296,41 @@ def test_schema_export_is_deterministic(tmp_path: Path) -> None:
 
     assert json.loads(first.read_text()) == json.loads(second.read_text())
     assert json.loads(first.read_text())["title"] == "LoopContract"
+    checked_in = Path("schemas/loop-contract.schema.json")
+    assert json.loads(first.read_text()) == json.loads(checked_in.read_text())
+
+
+def test_contract_template_is_valid_v030_autonomous() -> None:
+    raw = yaml.safe_load(Path("templates/contract.yaml").read_text(encoding="utf-8"))
+
+    contract = LoopContract.model_validate(raw)
+
+    assert contract.protocol_version == "0.3.0"
+    assert contract.mode.value == "autonomous"
+    assert contract.human_gates == ["contract_approval"]
+
+
+def test_schema_describes_version_aware_autonomous_only_contracts() -> None:
+    schema = LoopContract.model_json_schema()
+
+    assert schema["properties"]["protocol_version"] == {
+        "default": "0.3.0",
+        "enum": ["0.1.0", "0.2.0", "0.3.0"],
+        "title": "Protocol Version",
+        "type": "string",
+    }
+    assert schema["$defs"]["ControlMode"] == {
+        "enum": ["autonomous"],
+        "title": "ControlMode",
+        "type": "string",
+    }
+    assert schema["properties"]["mode"]["default"] == "autonomous"
+    assert {
+        "if": {
+            "properties": {
+                "protocol_version": {"enum": ["0.1.0", "0.2.0"]},
+            },
+            "required": ["protocol_version"],
+        },
+        "then": {"required": ["mode"]},
+    } in schema["allOf"]

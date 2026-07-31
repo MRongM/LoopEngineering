@@ -177,7 +177,6 @@
     },
     "ControlMode": {
       "enum": [
-        "collaborative",
         "autonomous"
       ],
       "title": "ControlMode",
@@ -450,6 +449,28 @@
     }
   },
   "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "protocol_version": {
+            "enum": [
+              "0.1.0",
+              "0.2.0"
+            ]
+          }
+        },
+        "required": [
+          "protocol_version"
+        ]
+      },
+      "then": {
+        "required": [
+          "mode"
+        ]
+      }
+    }
+  ],
   "properties": {
     "acceptance_criteria": {
       "items": {
@@ -514,7 +535,7 @@
     },
     "mode": {
       "$ref": "#/$defs/ControlMode",
-      "default": "collaborative"
+      "default": "autonomous"
     },
     "objective": {
       "minLength": 1,
@@ -545,10 +566,11 @@
       "$ref": "#/$defs/PermissionPolicy"
     },
     "protocol_version": {
-      "default": "0.2.0",
+      "default": "0.3.0",
       "enum": [
         "0.1.0",
-        "0.2.0"
+        "0.2.0",
+        "0.3.0"
       ],
       "title": "Protocol Version",
       "type": "string"

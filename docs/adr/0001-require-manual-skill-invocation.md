@@ -27,7 +27,9 @@ unrelated, cancelled or terminal binding must return without Loop mutation.
   alias is retained.
 - Natural-language approval still requires one current complete contract summary and an
   unambiguous decision; it does not grant new scope or permissions.
-- The product name, `loop-engineering` CLI, Core protocol and control modes do not change.
+- The product remains Loop Engineering and the Python distribution remains
+  `loop-engineering`; Protocol 0.3 has one Autonomous control mode and `loop-engine` is
+  the only Agent Shell executable.
 
 ## Follow-up decision
 

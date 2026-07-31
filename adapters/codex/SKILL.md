@@ -5,7 +5,7 @@ description: Run evidence-gated Loop Engineering workflows and manage the Codex 
 
 # Loop Engineering for Codex
 
-Compatible Core: >=0.2,<0.3
+Compatible Core: >=0.3,<0.4
 <!-- Legacy lifecycle updater compatibility: name: loop-engineering -->
 
 ## Task-scoped continuation
@@ -14,7 +14,8 @@ Only explicit `$loop-engine` may start a new Loop task.
 `allow_implicit_invocation: true` is eligibility, not authorization.
 After a task is uniquely bound, later user messages may continue it in natural language.
 Never use implicit selection to start or adopt a task.
-The trigger name does not rename Loop Engineering, the `loop-engineering` CLI, or Core.
+The trigger name does not rename Loop Engineering, the `loop-engineering` Python
+distribution, repository, or managed checkout.
 
 Natural-language clarification, approval, revision, pause recovery, cancellation and feedback
 are permitted only when they unambiguously address the same bound task. An unrelated message
@@ -88,13 +89,16 @@ mismatch or ambiguous response pauses. Never create a second Goal as a blind ret
 At the start of every host continuation:
 
 1. Use `get_goal` to verify the canonical objective, loop ID and absolute run directory.
-2. Run `loop-engineering run events` and require a matching successful Goal binding, or
+2. Run `loop-engine run events` and require a matching successful Goal binding, or
    reconcile the one pending Goal-create intent against real host state.
-3. Run `loop-engineering run status`, then reconcile every other pending intent before a
-   new action.
-4. Run `loop-engineering budget check`, followed by the ordinary per-action Gate and Maker
-   loop. Never rely on model memory as the source of truth.
-5. Apply a user message only when it unambiguously addresses this task or its current prompt;
+3. Run `loop-engine run status` and revalidate the current contract authorization binding:
+   current `protocol_version`, `contract_version`, `contract_sha256` and complete
+   `accepted_risk_ids` must match the append-only approval event.
+4. Reconcile every pending intent against real Git, filesystem, native Goal or external
+   service state before any new action; never retry an unmatched intent blindly.
+5. Run `loop-engine budget check`, followed by the ordinary per-action Gate and Maker loop.
+   Never rely on model memory as the source of truth.
+6. Apply a user message only when it unambiguously addresses this task or its current prompt;
    otherwise return without mutation.
 
 Any mismatch, unrelated active Goal, missing Goal tool, stale contract approval or pending
@@ -133,7 +137,7 @@ skill_dir="$codex_home/skills/loop-engineering"
 mkdir -p "$codex_home/skills" && \
 git clone --depth 1 --branch master "https://github.com/MRongM/LoopEngineering.git" "$skill_dir" && \
 python3 "$skill_dir/adapters/codex/scripts/manage.py" install --codex-home "$codex_home" && \
-loop-engineering --version
+loop-engine --version
 ```
 
 PowerShell install reference:
@@ -147,7 +151,7 @@ git clone --depth 1 --branch master "https://github.com/MRongM/LoopEngineering.g
 if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
 py -3.12 "$skillDir/adapters/codex/scripts/manage.py" install --codex-home "$codexHome"
 if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
-loop-engineering --version
+loop-engine --version
 if ($LASTEXITCODE -ne 0) { throw "Loop Engineering install failed" }
 ```
 
@@ -170,7 +174,7 @@ every existing configured instruction file, all applicable `AGENTS.md`, and the
 approved Loop Contract before modifying state.
 
 Resolve `PROTOCOL.md` from the LoopEngineering repository containing this Skill.
-If it is absent or its version does not satisfy `>=0.2,<0.3`, stop instead of
+If it is absent or its version does not satisfy `>=0.3,<0.4`, stop instead of
 silently falling back.
 
 ## Hard gate
@@ -194,9 +198,10 @@ content.
 ## Intake
 
 1. Classify the request as read-only or state-changing.
-2. Resolve the mode from the current request. Use an explicit `collaborative` or
-   `autonomous` choice when supplied; otherwise set `autonomous` without a separate mode prompt.
-   Never reuse the previous task's mode.
+2. Set `protocol_version: 0.3.0` and `mode: autonomous` for every new task.
+   Do not ask the user to choose a control mode. Reject incompatible mode input instead of
+   converting, recovering or inheriting it from another task. Resolve admission
+   without a separate mode prompt.
 3. Inspect the repository, instructions, tests, recent commits and dirty state read-only.
 4. Draft `contract.yaml` from the Core template with exact repositories, paths,
    acceptance criteria, argv validation, budget, permissions and Git targets. For
@@ -209,9 +214,10 @@ content.
    `.loop-runs/.drafts/<loop-id>/contract.yaml` relative to the project root. Populate
    every `repositories[].path` with its resolved absolute Git root.
 5. Always use `contract_approval`; do not add `design_approval` or `plan_approval` by default.
-   Add `final_acceptance` for collaborative mode. Autonomous `0.2.0` does not add `final_acceptance` based on risk level; preserve any extra gate explicitly required by
-   the current user instruction, project rules or an existing contract.
-6. Run `loop-engineering contract validate "<contract-path>"`.
+   Do not add `final_acceptance` by default. Preserve an extra gate only when the current
+   user instruction, project rules or an existing compatible legacy contract explicitly
+   requires it. Risk level alone never creates another human gate.
+6. Run `loop-engine contract validate "<contract-path>"`.
 7. Present one `Ready-to-execute Loop Contract` summary in this order: mode and
    objective; in/out of scope; acceptance criteria and validation; key design and
    implementation plan; risk, permissions, exact Git targets and budget; preauthorized
@@ -225,23 +231,44 @@ content.
    Before Run creation, require the unique current-conversation Pending Draft binding; after
    Goal creation, require the verified Goal/Run binding. Never combine separate replies.
 9. After approval, run
-   `loop-engineering run create "<contract-path>" --project "<project-root>"`,
+   `loop-engine run create "<contract-path>" --project "<project-root>"`,
    retain the created `intake` snapshot, record the discovering/drafting/awaiting
-   transitions and `contract_approval` with `loop-engineering run approval`. Core binds
+   transitions and `contract_approval` with `loop-engine run approval`. Core binds
    that event to the current contract version, SHA-256 and accepted risk IDs. Then
    advance through designing or planning toward execution without another approval
    unless an explicit extra gate applies.
 
-## Maker loop
+## Autonomous decision loop
+
+After the current bound contract approval, advance through
+`designing -> planning -> executing -> verifying -> checking -> deciding` without a
+routine confirmation between stages. Each iteration selects one unmet acceptance criterion,
+chooses the next smallest action inside the approved scope, observes real feedback, records
+fresh evidence, applies the required Checker verdict and then makes exactly one state decision.
+
+| Observed facts | Required decision |
+|---|---|
+| Fresh evidence and material progress | Continue to the next smallest action or the next unmet criterion. |
+| A test or command failure with new information | Return to diagnosis, form a new causal hypothesis and revise the plan before another mutation. |
+| Two consecutive iterations without new evidence or material progress | Return to diagnosis; do not continue the same implementation strategy. |
+| Checker `REVISE` | Return to planning or executing, apply the findings and consume one Checker revision. |
+| Checker `BLOCK` | Stop mutations; enter BLOCKED only for missing external authority or state, otherwise return to diagnosis with the exact finding. |
+| Checker `ACCEPT` plus every current DONE fact | Build the strict CompletionContext and run authoritative completion evaluation. |
+| The authoritative budget check reports exhaustion | Transition to BUDGET_EXHAUSTED without expanding the approved budget. |
+
+The same failed strategy may be attempted at most once. Difficulty is never evidence of
+BLOCKED or DONE, and natural-language confidence never substitutes for command results.
+
+### Maker action protocol
 
 For each unmet acceptance criterion:
 
-1. Run `loop-engineering budget check "<run-dir>"`. An exhausted result transitions
+1. Run `loop-engine budget check "<run-dir>"`. An exhausted result transitions
    to BUDGET_EXHAUSTED. A diagnosis-required result returns to planning and requires
    a new causal hypothesis before another action. Otherwise choose one smallest
    verifiable increment.
 2. Serialize the exact ActionRequest under `<run-dir>/inputs/` and run
-   `loop-engineering gate check "<run-dir>" "<request-json>"`.
+   `loop-engine gate check "<run-dir>" "<request-json>"`.
    Handle the returned decision exactly:
    - `allow`: continue without another human confirmation.
    - `pause` with `required_gate=contract_revision`: add the new exact target,
@@ -250,21 +277,21 @@ For each unmet acceptance criterion:
    - `pause` with `required_gate=contract_approval`: the current bound approval is
      missing or stale; return to the complete contract approval instead of showing an
      isolated risk prompt.
-   - `pause` with `required_gate=dangerous_action`: this is a collaborative or legacy
-     gate. Show the returned professional confirmation and record the explicit decision
-     with `loop-engineering run approval`.
+   - `pause` with `required_gate=dangerous_action`: this is a compatible legacy 0.1
+     Autonomous gate. Show the returned professional confirmation and record the explicit
+     decision with `loop-engine run approval`.
    - `deny`: record the rejection and never execute the operation.
 3. Immediately before every approved external state change, run
-   `loop-engineering run intent` with the exact action and target.
+   `loop-engine run intent` with the exact action and target.
 4. Make the change without touching unrelated user work.
-5. Run `loop-engineering run result` immediately after observing real state,
+5. Run `loop-engine run result` immediately after observing real state,
    marking whether new evidence/progress occurred and whether the strategy was reused.
    Git results use payload shape
    `{"git":{"repository_id":"target","operation":"push","success":true,
    "commit_sha":"<sha>","pr_url":"<url-or-empty>"}}`; record `create_pr` as a
    separate successful operation. Completion derives per-repository delivery only
    from these current-contract result events, never from prose.
-6. Run `loop-engineering evidence run "<run-dir>" "<VAL-ID>"`.
+6. Run `loop-engine evidence run "<run-dir>" "<VAL-ID>"`.
 7. Do not repeat the same failed strategy more than once.
 8. For multiple repositories, follow the contract's acyclic `depends_on` order,
    create one branch/PR per repository, and list prerequisite PRs in each dependent PR.
@@ -278,58 +305,74 @@ For each unmet acceptance criterion:
   evidence references or Checker findings to make a run appear successful.
 - Persist only redacted operational evidence; never persist secrets or model reasoning.
 
-## Checker
+### Checker protocol
 
 - Low risk: Maker self-checks against the contract and raw evidence.
 - Medium/high risk: dispatch a fresh independent Checker context.
 - Checker reads the contract, actual diff and raw evidence, then returns only
   `ACCEPT`, `REVISE` or `BLOCK` with findings and evidence.
-- Record the verdict and findings with `loop-engineering run checker`.
+- Record the verdict and findings with `loop-engine run checker`.
 - Checker never edits production code. `REVISE` returns to Maker and consumes a revision.
 - If an independent Checker is unavailable, medium/high work cannot become DONE.
 
-## Control modes
+## Autonomous execution
 
-- `collaborative`: one pre-execution approval covers the complete contract summary,
-  including its key design and plan. Continue through designing, planning and ordinary
-  implementation inside that contract; pause for a new dangerous action, a material
-  contract change, an explicit extra gate, or final acceptance before DONE.
-- `autonomous`: the one pre-execution approval accepts every precisely disclosed risk.
-  Continue through low, medium and high-risk operations—including exact
-  `production_access` and `sensitive_data` entries—until DONE, BLOCKED,
-  BUDGET_EXHAUSTED, contract revision, or a platform or external-service hard gate.
-  Risk level alone never creates another human gate or final acceptance.
-- The user may downgrade to collaborative at any time. Upgrading requires explicit approval.
+The Adapter has no alternate control-mode path. The one pre-execution approval accepts
+the complete contract and every precisely disclosed risk. Continue through designing,
+planning and ordinary implementation—including exact `production_access` and
+`sensitive_data` entries—until DONE, BLOCKED, BUDGET_EXHAUSTED, contract revision,
+user cancellation, or a platform or external-service hard gate. Risk level alone never
+creates another human gate or final acceptance.
+
 - A material target, scope, evidence, dangerous permission or budget change pauses the
   run, increments `contract_version`, re-enters contract_drafting/awaiting_approval,
-  and invokes `loop-engineering run revise` only after explicit approval.
+  and invokes `loop-engine run revise` only after explicit approval.
 - Record the combined execution authorization as `contract_approval`. Record
   `design_approval` or `plan_approval` separately only when an applicable rule or the
   approved contract explicitly requires that gate. Record final acceptance separately;
   a rejection never permits a forward transition.
 
+## Hard pause and stop boundaries
+
+Pause automatic execution only when one of these facts is true:
+
+- A complete contract revision is required for changed objective, scope, acceptance,
+  repository/Git target, dangerous permission, budget or newly discovered risk.
+- The current bound approval is missing, stale or mismatched against the current protocol,
+  contract version, canonical hash or complete risk IDs.
+- The Goal/Run binding is missing, ambiguous, stale or unrelated.
+- A pending intent cannot be reconciled against real local, Git, native Goal or external state.
+- A platform or external authentication hard gate requires human-only action.
+- The necessary authority or input is unavailable and cannot be derived inside the contract.
+- A required independent Checker is unavailable for medium/high-risk work.
+- The user cancels or explicitly pauses the bound task.
+- An authoritative budget or terminal state is reached.
+
+Risk level alone is not a pause boundary. Ordinary authorized work, test failures with usable
+feedback and Checker revisions are handled inside the loop without asking the user.
+Permanent-deny operations remain denied and must never be converted into confirmation or
+contract-revision prompts.
+
 ## Approval quick reference
 
 | Situation | Adapter action |
 |---|---|
-| Mode omitted | Select `autonomous` and disclose it in the complete summary |
+| New task | Set Autonomous Protocol 0.3 in the complete contract |
 | Initial state-changing task | Request one approval of the ready-to-execute summary |
 | Default design and plan stages | Continue without another approval |
 | Explicit `design_approval` or `plan_approval` | Pause at the declared extra gate |
 | Autonomous exact disclosed risk | Continue from the bound contract approval |
 | Autonomous new scope, permission or risk | Request one revised complete-summary approval |
-| Collaborative dangerous action | Run the exact `dangerous_action` gate |
-| Collaborative completion | Require final acceptance |
+| Compatible legacy 0.1 dangerous action | Run the exact `dangerous_action` gate |
 
 ## Common approval mistakes
 
-- Resolve an omitted mode to `autonomous` and disclose it in the summary; a standalone
-  mode prompt adds no authorization.
+- Every new task is Autonomous Protocol 0.3; a standalone mode prompt adds no authorization.
 - Put design and plan decisions in the ready-to-execute summary; default follow-up approval
   prompts fragment one decision into several.
 - Treat scope questions as information gathering and the complete-summary response as
   authorization; never infer approval from partial answers.
-- In Autonomous `0.2.0`, treat an emergent danger as contract scope change and bundle it
+- In Autonomous `0.2.0/0.3.0`, treat an emergent danger as contract scope change and bundle it
   into one revision approval; a standalone danger prompt would recreate the duplicate gate.
 - Do not treat a contract file by itself as proof of risk acceptance. Use the run-backed
   gate check so the current hash and accepted risk IDs are verified.
@@ -340,23 +383,26 @@ For each unmet acceptance criterion:
 
 Do not claim DONE from prose. Build the strict CompletionContext at
 `<run-dir>/inputs/completion-context.json` and run
-`loop-engineering completion evaluate "<contract-path>" "<context-json>"`.
-Only a zero exit code permits calling `loop-engineering run complete "<run-dir>"
+`loop-engine completion evaluate "<contract-path>" "<context-json>"`.
+Populate it only from the current code fingerprint, fresh validator evidence, the current scope result,
+required Checker `ACCEPT`, current contract authorization and no unresolved intent.
+Never use prose, stale evidence or Maker confidence as completion evidence.
+Only a zero exit code permits calling `loop-engine run complete "<run-dir>"
 --actor maker --reason "all DONE requirements passed"`. That authoritative command
 re-derives evidence records and hashes, current fingerprints, scope, Git delivery,
 approvals, pending intents and Checker status before transitioning. Verify every
 acceptance criterion has fresh evidence and approved Git/PR delivery completed. Use the
-`loop-engineering git` subcommands only after a matching gate decision and emit the
+`loop-engine git` subcommands only after a matching gate decision and emit the
 final report from `templates/final-report.md`.
 
 Set `scope_valid` in CompletionContext only from
-`loop-engineering scope check "<contract-path>"`; do not infer it from Maker prose.
+`loop-engine scope check "<contract-path>"`; do not infer it from Maker prose.
 Derive `checker_verdict`, `human_accepted`, `gates_clear` and
-`contract_current` from `loop-engineering run status "<run-dir>"`: unresolved
+`contract_current` from `loop-engine run status "<run-dir>"`: unresolved
 intent IDs, a paused state, or a required contract gate without an approval event make
 `gates_clear=false`, and contract versions must match.
 Populate evidence only from validator result events returned by
-`loop-engineering run events "<run-dir>"`.
+`loop-engine run events "<run-dir>"`.
 
 The permanent deny list is force-push, history rewriting, reset --hard, automatic merge and automatic deployment.
 不得自动合并或部署。不得强推、改写历史、执行 `git reset --hard`、泄露秘密，

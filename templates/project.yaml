@@ -1,4 +1,4 @@
-protocol_constraint: ">=0.2,<0.3"
+protocol_constraint: ">=0.3,<0.4"
 run_root: ".loop-runs"
 instruction_files:
   - "AGENTS.md"

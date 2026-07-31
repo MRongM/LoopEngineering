@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from loop_engineering.evidence import DoneEvaluator
 from loop_engineering.models.contract import LoopContract
 from loop_engineering.models.evidence import CompletionContext, EvidenceRecord
@@ -12,11 +14,14 @@ def scenario(
     *,
     checker: CheckerVerdict | None,
     human: bool,
-    protocol_version: str = "0.2.0",
+    protocol_version: str = "0.3.0",
 ) -> tuple[LoopContract, CompletionContext]:
     data = (
-        autonomous_risk_contract_data("file_write")
-        if protocol_version == "0.2.0" and risk == "high"
+        autonomous_risk_contract_data(
+            "file_write",
+            protocol_version=protocol_version,
+        )
+        if protocol_version in {"0.2.0", "0.3.0"} and risk == "high"
         else valid_contract_data(protocol_version=protocol_version)
     )
     data["mode"] = "autonomous"
@@ -62,32 +67,42 @@ def scenario(
     return contract, context
 
 
-def test_medium_risk_rejects_revise_and_accepts_checker_accept() -> None:
+@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
+def test_medium_risk_rejects_revise_and_accepts_checker_accept(
+    protocol_version: str,
+) -> None:
     contract, revise = scenario(
         "medium",
         checker=CheckerVerdict.REVISE,
         human=False,
+        protocol_version=protocol_version,
     )
     assert DoneEvaluator(contract).evaluate(revise).done is False
     _, accepted = scenario(
         "medium",
         checker=CheckerVerdict.ACCEPT,
         human=False,
+        protocol_version=protocol_version,
     )
     assert DoneEvaluator(contract).evaluate(accepted).done is True
 
 
-def test_v020_high_risk_requires_checker_but_not_final_human() -> None:
+@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
+def test_bound_high_risk_requires_checker_but_not_final_human(
+    protocol_version: str,
+) -> None:
     contract, accepted = scenario(
         "high",
         checker=CheckerVerdict.ACCEPT,
         human=False,
+        protocol_version=protocol_version,
     )
     assert DoneEvaluator(contract).evaluate(accepted).done is True
     _, revise = scenario(
         "high",
         checker=CheckerVerdict.REVISE,
         human=False,
+        protocol_version=protocol_version,
     )
     assert DoneEvaluator(contract).evaluate(revise).reasons == [
         "checker has not accepted"

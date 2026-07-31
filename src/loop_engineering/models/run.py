@@ -46,7 +46,7 @@ class LoopState(StrictModel):
 
 
 class ContractAuthorization(StrictModel):
-    protocol_version: Literal["0.2.0"]
+    protocol_version: Literal["0.2.0", "0.3.0"]
     contract_version: int = Field(ge=1)
     contract_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     accepted_risk_ids: list[str]
