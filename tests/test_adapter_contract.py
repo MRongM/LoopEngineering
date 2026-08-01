@@ -3,11 +3,65 @@ from pathlib import Path
 
 import yaml
 
+SKILL_PATH = Path("adapters/codex/SKILL.md")
+REFERENCE_PATHS = (
+    Path("adapters/codex/references/intake-contract.md"),
+    Path("adapters/codex/references/goal-bridge.md"),
+    Path("adapters/codex/references/execution-loop.md"),
+    Path("adapters/codex/references/lifecycle.md"),
+)
+ENTRY_WORD_BUDGET = 2113
+
+
+def read_skill_body() -> str:
+    _, _, body = SKILL_PATH.read_text(encoding="utf-8").split("---", 2)
+    return body
+
+
+def read_adapter_protocol() -> str:
+    parts = [read_skill_body()]
+    parts.extend(
+        path.read_text(encoding="utf-8")
+        for path in REFERENCE_PATHS
+        if path.is_file()
+    )
+    return "\n".join(parts)
+
+
+def test_codex_skill_uses_bounded_progressive_disclosure() -> None:
+    body = read_skill_body()
+
+    assert len(body.split()) <= ENTRY_WORD_BUDGET
+    for path in REFERENCE_PATHS:
+        route = path.relative_to(SKILL_PATH.parent)
+        assert path.is_file(), path
+        assert f"`{route.as_posix()}`" in body
+        assert f"`{path.as_posix()}`" not in body
+        assert (SKILL_PATH.parent / route).is_file()
+
+    assert "Read each required reference directly from this routing table" in body
+    assert "git clone --depth 1" not in body
+    assert "git clone --depth 1" in REFERENCE_PATHS[3].read_text(encoding="utf-8")
+
+
+def test_codex_skill_keeps_the_safety_kernel_inline() -> None:
+    body = read_skill_body()
+
+    for required in (
+        "Only explicit `$loop-engine` may start a new Loop task.",
+        "Compatible Core: >=0.3,<0.4",
+        "Do not mutate before the complete Loop Contract is explicitly approved.",
+        "Never scan `.loop-runs/` for a newest Draft or Run.",
+        "Never use prose as evidence of `DONE`.",
+        "force-push, history rewriting, `git reset --hard`, automatic merge and automatic deployment",
+    ):
+        assert required in body
+
 
 def test_codex_skill_declares_required_loop_contract() -> None:
-    path = Path("adapters/codex/SKILL.md")
-    text = path.read_text(encoding="utf-8")
+    text = SKILL_PATH.read_text(encoding="utf-8")
     _, frontmatter, body = text.split("---", 2)
+    protocol = read_adapter_protocol()
     metadata = yaml.safe_load(frontmatter)
 
     assert set(metadata) == {"name", "description"}
@@ -45,15 +99,15 @@ def test_codex_skill_declares_required_loop_contract() -> None:
         "py -3.12",
         "不得自动合并或部署",
     ):
-        assert required in body
-    assert 'mkdir -p "$codex_home/skills" && \\' in body
-    assert 'install --codex-home "$codex_home" && \\' in body
-    assert 'throw "Loop Engineering install failed"' in body
-    assert "collaborative" not in body.casefold()
+        assert required in protocol
+    assert 'mkdir -p "$codex_home/skills" && \\' in protocol
+    assert 'install --codex-home "$codex_home" && \\' in protocol
+    assert 'throw "Loop Engineering install failed"' in protocol
+    assert "collaborative" not in protocol.casefold()
 
 
 def test_codex_skill_is_autonomous_only() -> None:
-    _, _, body = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8").split("---", 2)
+    body = read_adapter_protocol()
 
     for required in (
         "`protocol_version: 0.3.0`",
@@ -89,7 +143,7 @@ def test_codex_skill_is_autonomous_only() -> None:
 
 
 def test_codex_skill_runs_the_autonomous_decision_loop() -> None:
-    _, _, body = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8").split("---", 2)
+    body = read_adapter_protocol()
 
     for required in (
         "## Autonomous decision loop",
@@ -109,7 +163,7 @@ def test_codex_skill_runs_the_autonomous_decision_loop() -> None:
 
 
 def test_codex_skill_pauses_only_at_hard_boundaries() -> None:
-    _, _, body = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8").split("---", 2)
+    body = read_adapter_protocol()
 
     for required in (
         "## Hard pause and stop boundaries",
@@ -132,7 +186,7 @@ def test_codex_skill_pauses_only_at_hard_boundaries() -> None:
 
 
 def test_codex_skill_completion_requires_fresh_evidence() -> None:
-    _, _, body = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8").split("---", 2)
+    body = read_adapter_protocol()
 
     for required in (
         "current code fingerprint",
@@ -198,6 +252,7 @@ def test_current_release_docs_use_only_loop_engine_commands() -> None:
         Path("CONTEXT.md"),
         Path("docs/adr/0001-require-manual-skill-invocation.md"),
         Path("adapters/codex/SKILL.md"),
+        *REFERENCE_PATHS,
     )
     legacy_command = re.compile(
         r"\b(?:loop-engineering|loop-agent)\s+"
@@ -266,7 +321,7 @@ def test_codex_skill_requires_the_short_trigger_only_for_new_tasks() -> None:
 
 
 def test_codex_skill_supports_task_scoped_goal_bound_continuation() -> None:
-    skill = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8")
+    skill = read_adapter_protocol()
     normalized_skill = " ".join(skill.split()).casefold()
     context = Path("CONTEXT.md").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
@@ -321,8 +376,7 @@ def test_codex_skill_supports_task_scoped_goal_bound_continuation() -> None:
 
 
 def test_codex_skill_accepts_natural_language_approval_without_a_fixed_phrase() -> None:
-    text = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8")
-    _, _, body = text.split("---", 2)
+    body = read_adapter_protocol()
 
     for required in (
         "Accept one unambiguous natural-language approval of the latest complete summary.",
@@ -375,8 +429,7 @@ def test_readme_documents_one_line_fail_closed_uninstall() -> None:
 
 
 def test_codex_skill_uses_one_autonomous_pre_execution_approval() -> None:
-    text = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8")
-    _, _, body = text.split("---", 2)
+    body = read_adapter_protocol()
 
     for required in (
         "Ready-to-execute Loop Contract",
@@ -401,8 +454,7 @@ def test_codex_skill_uses_one_autonomous_pre_execution_approval() -> None:
 
 
 def test_codex_skill_defaults_every_new_task_to_autonomous() -> None:
-    text = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8")
-    _, _, body = text.split("---", 2)
+    body = read_adapter_protocol()
 
     for required in (
         "Set `protocol_version: 0.3.0` and `mode: autonomous` for every new task.",
@@ -444,8 +496,7 @@ def test_current_compatibility_supersedes_historical_mode_defaults() -> None:
 
 
 def test_codex_skill_keeps_control_files_inside_target_project() -> None:
-    text = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8")
-    _, _, body = text.split("---", 2)
+    body = read_adapter_protocol()
     adoption = Path("docs/adoption.md").read_text(encoding="utf-8")
 
     for required in (
@@ -470,8 +521,7 @@ def test_codex_skill_keeps_control_files_inside_target_project() -> None:
 
 
 def test_codex_skill_bundles_autonomous_risk_acceptance() -> None:
-    text = Path("adapters/codex/SKILL.md").read_text(encoding="utf-8")
-    _, _, body = text.split("---", 2)
+    body = read_adapter_protocol()
 
     for required in (
         "Autonomous Risk Acceptance",
