@@ -24,6 +24,7 @@ from loop_engineering.policy import (
 from loop_engineering.project import initialize_project
 from loop_engineering.redaction import redact
 from loop_engineering.state_machine import BudgetCondition, budget_status
+from loop_engineering.watch import watch_project
 
 
 def _json(value: object, *, stream: IO[str] | None = None) -> None:
@@ -37,6 +38,10 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="loop-engine")
     parser.add_argument("--version", action="version", version=__version__)
     groups = parser.add_subparsers(dest="group", required=True)
+
+    watch = groups.add_parser("watch")
+    watch.add_argument("--all", action="store_true")
+    watch.set_defaults(command=None)
 
     project = groups.add_parser("project")
     project_commands = project.add_subparsers(dest="command", required=True)
@@ -172,7 +177,13 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        if (args.group, args.command) == ("project", "init"):
+        if args.group == "watch":
+            watch_project(
+                Path.cwd(),
+                include_terminal=args.all,
+                stream=sys.stdout,
+            )
+        elif (args.group, args.command) == ("project", "init"):
             config = initialize_project(
                 args.root,
                 update_gitignore=args.update_gitignore,

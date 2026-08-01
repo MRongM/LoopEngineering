@@ -170,6 +170,26 @@ def test_adoption_guide_has_manual_and_installed_paths() -> None:
     assert "ln -s" not in text
 
 
+def test_project_watch_is_documented_as_a_read_only_dashboard() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+    adoption = Path("docs/adoption.md").read_text(encoding="utf-8")
+
+    for text in (readme, adoption):
+        assert "loop-engine watch" in text
+        assert "loop-engine watch --all" in text
+        assert "loop-engine run watch" not in text
+
+    for required in (
+        "从当前目录向上查找",
+        "不接受 Run 目录参数",
+        "严格只读",
+        "非终态和暂停",
+        "终态历史",
+        "非 TTY",
+    ):
+        assert required in adoption
+
+
 def test_current_release_docs_use_only_loop_engine_commands() -> None:
     active_paths = (
         Path("README.md"),

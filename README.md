@@ -69,6 +69,23 @@ Goal.
 The managed checkout must contain this adapter version, and Codex must be restarted after a
 user-operated update before task-scoped continuation is available.
 
+## Watch project progress
+
+From any directory inside an initialized target project, open the read-only terminal
+dashboard with:
+
+```bash
+loop-engine watch
+loop-engine watch --all
+```
+
+The first command shows active and paused Runs; `--all` also includes terminal history.
+The command discovers the nearest `.loop-engineering/project.yaml` by walking upward and
+does not accept a Run-directory argument. An interactive terminal refreshes in place until
+no active Run remains or you press Ctrl-C; redirected output emits one plain snapshot.
+Watching never adopts, resumes, approves or otherwise mutates a Run, and displayed evidence
+does not replace authoritative completion evaluation.
+
 ## Update the Skill from a shell
 
 Run this manually in a terminal; it is not a Codex chat command. Update is

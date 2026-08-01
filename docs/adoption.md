@@ -171,6 +171,24 @@ Agent 必须先展示 Loop Contract；Autonomous 契约还必须用一个风险�
 任何自然语言回复仍只能作用于唯一 Pending Draft 或经 Goal/账本验证的同一 Run；
 绑定缺失、歧义、无关、已取消或终态时不得执行 Loop 修改。
 
-### 7. 验收交付
+### 7. 在终端观察项目进度
+
+在已初始化项目的任意子目录中运行：
+
+```bash
+loop-engine watch
+loop-engine watch --all
+```
+
+命令从当前目录向上查找最近的 `.loop-engineering/project.yaml`，不接受 Run 目录参数，
+也没有 `run` 子命令别名。默认显示非终态和暂停 Run；`--all` 额外显示
+终态历史。该仪表板严格只读：不会采用、恢复、批准或修改 Run，也不会根据展示内容
+自行判定 `DONE`。
+
+在 TTY 中，界面会原地刷新；所有活动 Run 进入终态后保留最后一帧并退出，Ctrl-C
+会恢复光标和终端样式。非 TTY（例如管道或重定向）只输出一次无 ANSI 控制符的纯文本
+快照，便于日志和脚本读取。
+
+### 8. 验收交付
 
 检查 `final-report.md`、测试证据、Checker 结论、提交和 PR。合并与部署仍由人工执行。

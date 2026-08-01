@@ -5,6 +5,10 @@ import pytest
 import yaml
 
 from loop_engineering.cli import main
+from loop_engineering.ledger import RunStore
+from loop_engineering.models.contract import LoopContract
+from loop_engineering.models.run import LoopStatus
+from loop_engineering.project import initialize_project
 from tests.factories import autonomous_risk_contract_data, valid_contract_data
 
 
@@ -26,8 +30,57 @@ def test_cli_help_uses_unique_name_and_keeps_every_command_group(capsys) -> None
         "gate",
         "scope",
         "git",
+        "watch",
     ):
         assert group in help_text
+
+
+def test_cli_watch_discovers_project_and_filters_terminal_runs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+) -> None:
+    project = tmp_path / "project"
+    nested = project / "src" / "feature"
+    nested.mkdir(parents=True)
+    initialize_project(project)
+    active_data = valid_contract_data()
+    active_data["loop_id"] = "loop-active"
+    active_data["repositories"][0]["path"] = str(project)
+    RunStore.create(project, LoopContract.model_validate(active_data))
+    terminal_data = valid_contract_data()
+    terminal_data["loop_id"] = "loop-terminal"
+    terminal_data["repositories"][0]["path"] = str(project)
+    terminal = RunStore.create(project, LoopContract.model_validate(terminal_data))
+    terminal.save_state(
+        terminal.load_state().model_copy(update={"status": LoopStatus.DONE})
+    )
+    monkeypatch.chdir(nested)
+
+    assert main(["watch"]) == 0
+    active_output = capsys.readouterr().out
+    assert "loop-active" in active_output
+    assert "loop-terminal" not in active_output
+
+    assert main(["watch", "--all"]) == 0
+    all_output = capsys.readouterr().out
+    assert "loop-active" in all_output
+    assert "loop-terminal" in all_output
+
+
+def test_cli_watch_rejects_a_run_directory_argument(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["watch", str(tmp_path)])
+
+    assert exit_info.value.code == 2
+
+
+def test_run_command_group_does_not_expose_watch(capsys) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["run", "--help"])
+
+    assert exit_info.value.code == 0
+    assert "watch" not in capsys.readouterr().out
 
 
 def test_cli_validates_contract_and_exports_schemas(tmp_path: Path, capsys) -> None:
