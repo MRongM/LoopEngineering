@@ -4,6 +4,31 @@ from pathlib import Path
 import yaml
 
 SKILL_PATH = Path("adapters/codex/SKILL.md")
+REFERENCE_PATHS = (
+    Path("adapters/codex/references/intake-contract.md"),
+    Path("adapters/codex/references/goal-bridge.md"),
+    Path("adapters/codex/references/execution-loop.md"),
+    Path("adapters/codex/references/lifecycle.md"),
+)
+STAGE_ROUTES = (
+    (
+        "Explicit new task, Pending Draft, complete approval or contract revision",
+        REFERENCE_PATHS[0],
+    ),
+    (
+        "Goal creation, reconciliation, continuation, cancellation or Goal completion",
+        REFERENCE_PATHS[1],
+    ),
+    (
+        "Designing, planning, executing, verifying, checking, deciding or Loop completion",
+        REFERENCE_PATHS[2],
+    ),
+    (
+        "Installation, update, status, uninstall or project initialization",
+        REFERENCE_PATHS[3],
+    ),
+)
+ENTRY_WORD_BUDGET = 2113
 
 
 def skill_parts() -> tuple[dict[str, object], str]:
@@ -11,6 +36,72 @@ def skill_parts() -> tuple[dict[str, object], str]:
     prefix, frontmatter, body = text.split("---", 2)
     assert prefix == ""
     return yaml.safe_load(frontmatter), body
+
+
+def read_adapter_protocol() -> str:
+    _, body = skill_parts()
+    return "\n".join(
+        [body]
+        + [path.read_text(encoding="utf-8") for path in REFERENCE_PATHS if path.is_file()]
+    )
+
+
+def test_codex_skill_uses_bounded_progressive_disclosure() -> None:
+    _, body = skill_parts()
+
+    assert len(body.split()) <= ENTRY_WORD_BUDGET
+    for path in REFERENCE_PATHS:
+        route = path.relative_to(SKILL_PATH.parent)
+        assert path.is_file(), path
+        assert f"`{route.as_posix()}`" in body
+        assert f"`{path.as_posix()}`" not in body
+        assert "references/" not in path.read_text(encoding="utf-8")
+
+    for stage, path in STAGE_ROUTES:
+        route = path.relative_to(SKILL_PATH.parent)
+        assert f"| {stage} | `{route.as_posix()}` |" in body
+
+    assert "Read each required reference directly from this routing table" in body
+    assert "git clone --depth 1" not in body
+    assert "git clone --depth 1" in REFERENCE_PATHS[3].read_text(encoding="utf-8")
+
+
+def test_codex_skill_keeps_the_first_release_safety_kernel_inline() -> None:
+    _, body = skill_parts()
+
+    for required in (
+        "Only explicit `$loop-engine` may start a new Loop task.",
+        "Core Protocol: 0.1.0",
+        "Do not mutate before the complete Loop Contract is explicitly approved.",
+        "Do not scan `.loop-engine/drafts/` or `.loop-engine/runs/` for the newest Draft or Run",
+        "Never use prose as evidence of `DONE`.",
+        "force-push, history rewriting, `git reset --hard`, automatic merge and automatic deployment",
+    ):
+        assert required in body
+
+
+def test_codex_skill_composed_corpus_remains_first_release_only() -> None:
+    protocol = read_adapter_protocol()
+
+    assert "Core Protocol: 0.1.0" in protocol
+    assert "`protocol_version: 0.1.0`" in protocol
+    assert "`.loop-engine/`" in protocol
+    for obsolete in (
+        "Compatible Core:",
+        ".loop-runs/",
+        ".loop-engineering/",
+    ):
+        assert obsolete.casefold() not in protocol.casefold()
+
+    assert re.search(r"\b0\.3(?:\.\d+)?\b", protocol) is None
+    assert (
+        re.search(
+            r"required_gate\s*=\s*`?dangerous[-_]action`?",
+            protocol,
+            flags=re.IGNORECASE,
+        )
+        is None
+    )
 
 
 def test_codex_skill_exposes_one_first_release_identity() -> None:
@@ -31,7 +122,7 @@ def test_repository_gitignore_has_no_obsolete_loop_runtime_root() -> None:
 
 
 def test_codex_skill_forms_one_execution_closed_contract() -> None:
-    _, body = skill_parts()
+    body = read_adapter_protocol()
 
     for required in (
         "Ready-to-execute Loop Contract",
@@ -56,7 +147,7 @@ def test_codex_skill_forms_one_execution_closed_contract() -> None:
 
 
 def test_codex_skill_continues_without_routine_interruptions_after_approval() -> None:
-    _, body = skill_parts()
+    body = read_adapter_protocol()
 
     for required in (
         "Batch every unresolved pre-execution decision into the complete summary",
@@ -69,7 +160,7 @@ def test_codex_skill_continues_without_routine_interruptions_after_approval() ->
 
 
 def test_codex_skill_pauses_only_at_hard_boundaries() -> None:
-    _, body = skill_parts()
+    body = read_adapter_protocol()
 
     for required in (
         "## Hard pause and stop boundaries",
@@ -87,7 +178,7 @@ def test_codex_skill_pauses_only_at_hard_boundaries() -> None:
 
 
 def test_codex_skill_runs_the_autonomous_decision_loop() -> None:
-    _, body = skill_parts()
+    body = read_adapter_protocol()
 
     for required in (
         "## Autonomous decision loop",
@@ -105,7 +196,7 @@ def test_codex_skill_runs_the_autonomous_decision_loop() -> None:
 
 
 def test_codex_skill_uses_one_project_local_control_directory() -> None:
-    _, body = skill_parts()
+    body = read_adapter_protocol()
 
     for required in (
         "`.loop-engine/project.yaml`",
@@ -116,8 +207,10 @@ def test_codex_skill_uses_one_project_local_control_directory() -> None:
         "Use resolved absolute paths for every `repositories[].path`",
     ):
         assert required in body
+
+
 def test_codex_skill_requires_isolated_validation_and_fresh_evidence() -> None:
-    _, body = skill_parts()
+    body = read_adapter_protocol()
 
     for required in (
         "workspace_policy: isolated",
@@ -134,7 +227,7 @@ def test_codex_skill_requires_isolated_validation_and_fresh_evidence() -> None:
 
 
 def test_codex_skill_keeps_goal_continuation_bound_to_the_run() -> None:
-    _, body = skill_parts()
+    body = read_adapter_protocol()
 
     for required in (
         "Task-scoped continuation",
@@ -151,7 +244,7 @@ def test_codex_skill_keeps_goal_continuation_bound_to_the_run() -> None:
 
 
 def test_codex_skill_uses_only_the_loop_engine_cli() -> None:
-    _, body = skill_parts()
+    body = read_adapter_protocol()
 
     for group in (
         "project",

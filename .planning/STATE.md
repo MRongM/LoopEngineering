@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.1.0
 milestone_name: first-public-release
 status: completed
-last_updated: "2026-08-01T08:18:12Z"
-last_activity: 2026-08-01 -- Removed confirmed prerelease records
+last_updated: "2026-08-01T08:56:58Z"
+last_activity: 2026-08-01 -- Completed quick task 260801-my8: Protocol 0.1 Skill progressive disclosure
 progress:
   total_phases: 1
   completed_phases: 1
@@ -26,9 +26,9 @@ See: `.planning/PROJECT.md` (updated 2026-08-01)
 
 ## Current Position
 
-Workflow: inline `gsd-debug`
-Status: completed first-release release-surface convergence
-Artifact: `.planning/debug/loop-execution-convergence.md`
+Workflow: inline `gsd-quick`
+Status: completed Protocol 0.1 Skill progressive-disclosure backport
+Artifact: `.planning/quick/260801-my8-backport-codex-skill-progressive-disclos/260801-my8-SUMMARY.md`
 
 Progress: `[██████████] 100%`
 
@@ -44,8 +44,10 @@ Progress: `[██████████] 100%`
 
 ## Verification
 
-- Full pytest: `236 passed`
+- Full pytest: `239 passed`
 - Ruff: all checks passed
+- Adapter entrypoint: `833` words, reduced `74.96%` from the `3327`-word baseline
+- Complete temporary-index patch: applied to a fresh target clone; Adapter tests passed
 - Schema: regenerated from final models
 - Package: sdist and wheel built as `0.1.0`
 - Agent Shell: wheel exposes only `loop-engine`
@@ -55,6 +57,12 @@ Progress: `[██████████] 100%`
 
 None.
 
+## Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260801-my8 | Backport Codex Skill progressive disclosure while preserving Protocol 0.1.0 | 2026-08-01 | uncommitted | [260801-my8-backport-codex-skill-progressive-disclos](./quick/260801-my8-backport-codex-skill-progressive-disclos/) |
+
 ## Constraints Preserved
 
 - 未创建分支，未提交或推送 Git。
@@ -63,6 +71,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-08-01T08:18:12Z
-Stopped at: confirmed prerelease cleanup complete
-Resume file: `.planning/debug/loop-execution-convergence.md`
+Last session: 2026-08-01T08:56:58Z
+Stopped at: completed quick task 260801-my8 Protocol 0.1 Skill progressive disclosure
+Resume file: `.planning/quick/260801-my8-backport-codex-skill-progressive-disclos/260801-my8-SUMMARY.md`
