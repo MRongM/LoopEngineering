@@ -16,19 +16,9 @@ def create_store(tmp_path: Path) -> RunStore:
     return RunStore.create(tmp_path, contract)
 
 
-def create_risk_store(
-    tmp_path: Path,
-    *,
-    protocol_version: str = "0.3.0",
-) -> RunStore:
-    data = autonomous_risk_contract_data(protocol_version=protocol_version)
-    data["repositories"][0]["path"] = str(tmp_path)
-    contract = LoopContract.model_validate(data)
-    return RunStore.create(tmp_path, contract)
-
-
-def create_version_store(tmp_path: Path, protocol_version: str) -> RunStore:
-    data = valid_contract_data(protocol_version=protocol_version)
+def create_risk_store(tmp_path: Path) -> RunStore:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    data = autonomous_risk_contract_data()
     data["repositories"][0]["path"] = str(tmp_path)
     return RunStore.create(tmp_path, LoopContract.model_validate(data))
 
@@ -64,11 +54,35 @@ def test_events_are_monotonic_and_secrets_are_redacted(tmp_path: Path) -> None:
     assert store.pending_intents() == []
 
 
+def test_run_store_uses_the_single_project_control_root(tmp_path: Path) -> None:
+    store = create_store(tmp_path)
+
+    assert store.run_dir == (
+        tmp_path.resolve() / ".loop-engine" / "runs" / "loop-example-001"
+    )
+    assert (tmp_path / ".loop-engine" / "project.yaml").is_file()
+
+
+def test_run_store_rejects_a_noncanonical_run_directory(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="canonical .loop-engine/runs directory"):
+        RunStore(tmp_path / "runs" / "loop-example-001")
+
+
 def test_unmatched_intent_is_reported_for_reconciliation(tmp_path: Path) -> None:
     store = create_store(tmp_path)
     action_id = store.record_intent(actor="maker", summary="push", payload={})
 
     assert [event.action_id for event in store.pending_intents()] == [action_id]
+
+
+def test_new_intent_is_rejected_until_the_previous_one_is_reconciled(
+    tmp_path: Path,
+) -> None:
+    store = create_store(tmp_path)
+    store.record_intent(actor="maker", summary="first action", payload={})
+
+    with pytest.raises(ValueError, match="pending intent"):
+        store.record_intent(actor="maker", summary="second action", payload={})
 
 
 def test_half_written_tail_is_detected(tmp_path: Path) -> None:
@@ -87,6 +101,19 @@ def test_state_snapshot_is_valid_json(tmp_path: Path) -> None:
     store.save_state(state.model_copy(update={"last_event_sequence": 7}))
 
     assert json.loads(store.state_path.read_text())["last_event_sequence"] == 7
+
+
+def test_state_save_revalidates_model_copy_invariants(tmp_path: Path) -> None:
+    store = create_store(tmp_path)
+    state = store.load_state().model_copy(
+        update={
+            "status": LoopStatus.EXECUTING,
+            "paused_at": store.load_state().started_at,
+        }
+    )
+
+    with pytest.raises(ValidationError, match="paused_at"):
+        store.save_state(state)
 
 
 def test_open_detects_contract_state_version_mismatch(tmp_path: Path) -> None:
@@ -154,12 +181,9 @@ def test_result_must_match_one_unresolved_intent(tmp_path: Path) -> None:
         )
 
 
-@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
-def test_bound_contract_approval_records_version_hash_and_risk_ids(
-    tmp_path: Path,
-    protocol_version: str,
-) -> None:
-    store = create_risk_store(tmp_path, protocol_version=protocol_version)
+def test_contract_approval_binds_version_hash_and_risk_ids(tmp_path: Path) -> None:
+    store = create_risk_store(tmp_path)
+    move_to_awaiting_approval(store)
 
     event = store.record_approval(
         actor="user",
@@ -168,7 +192,7 @@ def test_bound_contract_approval_records_version_hash_and_risk_ids(
         summary="accepted all disclosed risks",
     )
 
-    assert event.payload["protocol_version"] == protocol_version
+    assert event.payload["protocol_version"] == "0.1.0"
     assert event.payload["contract_version"] == 1
     assert len(event.payload["contract_sha256"]) == 64
     assert event.payload["accepted_risk_ids"] == ["RISK-1"]
@@ -178,15 +202,9 @@ def test_bound_contract_approval_records_version_hash_and_risk_ids(
     assert authorization.accepted_risk_ids == ["RISK-1"]
 
 
-@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
-def test_rejected_or_tampered_bound_contract_has_no_authorization(
-    tmp_path: Path,
-    protocol_version: str,
-) -> None:
-    rejected = create_risk_store(
-        tmp_path / "rejected",
-        protocol_version=protocol_version,
-    )
+def test_rejected_or_tampered_contract_has_no_authorization(tmp_path: Path) -> None:
+    rejected = create_risk_store(tmp_path / "rejected")
+    move_to_awaiting_approval(rejected)
     rejected.record_approval(
         actor="user",
         gate="contract_approval",
@@ -195,10 +213,8 @@ def test_rejected_or_tampered_bound_contract_has_no_authorization(
     )
     assert rejected.current_contract_authorization() is None
 
-    tampered = create_risk_store(
-        tmp_path / "tampered",
-        protocol_version=protocol_version,
-    )
+    tampered = create_risk_store(tmp_path / "tampered")
+    move_to_awaiting_approval(tampered)
     tampered.record_approval(
         actor="user",
         gate="contract_approval",
@@ -215,42 +231,62 @@ def test_rejected_or_tampered_bound_contract_has_no_authorization(
     assert tampered.current_contract_authorization() is None
 
 
-def test_legacy_contract_approval_payload_remains_unbound(tmp_path: Path) -> None:
-    contract = LoopContract.model_validate(
-        valid_contract_data(protocol_version="0.1.0")
-    )
-    store = RunStore.create(tmp_path, contract)
-
-    event = store.record_approval(
-        actor="user",
-        gate="contract_approval",
-        approved=True,
-        summary="legacy approval",
-    )
-
-    assert event.payload == {"gate": "contract_approval", "approved": True}
-    assert store.current_contract_authorization() is None
-
-
-@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
-def test_contract_authorization_rejects_noncanonical_risk_id(
-    protocol_version: str,
-) -> None:
+def test_contract_authorization_rejects_noncanonical_risk_id() -> None:
     with pytest.raises(ValidationError, match="RISK-<positive-number>"):
         ContractAuthorization(
-            protocol_version=protocol_version,
+            protocol_version="0.1.0",
             contract_version=1,
             contract_sha256="0" * 64,
             accepted_risk_ids=["RISK-0"],
         )
 
 
-@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
-def test_tampered_bound_contract_cannot_leave_awaiting_approval(
+def test_contract_approval_requires_awaiting_approval(tmp_path: Path) -> None:
+    store = create_store(tmp_path)
+
+    with pytest.raises(ValueError, match="awaiting_approval"):
+        store.record_approval(
+            actor="user",
+            gate="contract_approval",
+            approved=True,
+            summary="too early",
+        )
+
+
+def test_public_approval_api_rejects_every_other_gate(tmp_path: Path) -> None:
+    store = create_store(tmp_path)
+    move_to_awaiting_approval(store)
+
+    with pytest.raises(ValueError, match="only contract_approval"):
+        store.record_approval(
+            actor="user",
+            gate="contract_revision",
+            approved=True,
+            summary="must use contract replacement",
+        )
+
+
+def test_pause_before_approval_cannot_resume_into_execution_flow(
     tmp_path: Path,
-    protocol_version: str,
 ) -> None:
-    store = create_risk_store(tmp_path, protocol_version=protocol_version)
+    store = create_store(tmp_path)
+    move_to_awaiting_approval(store)
+    store.record_transition(
+        actor="maker",
+        target=LoopStatus.PAUSED,
+        reason="waiting for user",
+    )
+
+    with pytest.raises(ValueError, match="contract approval"):
+        store.record_transition(
+            actor="maker",
+            target=LoopStatus.PLANNING,
+            reason="must not bypass approval through pause",
+        )
+
+
+def test_tampered_contract_cannot_leave_awaiting_approval(tmp_path: Path) -> None:
+    store = create_risk_store(tmp_path)
     move_to_awaiting_approval(store)
     store.record_approval(
         actor="user",
@@ -274,51 +310,23 @@ def test_tampered_bound_contract_cannot_leave_awaiting_approval(
         )
 
 
-@pytest.mark.parametrize(
-    ("current_version", "revised_version"),
-    [("0.2.0", "0.1.0"), ("0.3.0", "0.2.0"), ("0.3.0", "0.1.0")],
-)
-def test_contract_revision_rejects_every_protocol_downgrade(
+def test_contract_revision_stays_on_first_protocol_and_gets_fresh_binding(
     tmp_path: Path,
-    current_version: str,
-    revised_version: str,
 ) -> None:
-    store = create_version_store(tmp_path, current_version)
+    store = create_store(tmp_path)
     move_to_awaiting_approval(store)
-    revised_data = valid_contract_data(protocol_version=revised_version)
-    revised_data["loop_id"] = "loop-example-001"
+    revised_data = valid_contract_data()
     revised_data["contract_version"] = 2
-    revised = LoopContract.model_validate(revised_data)
-
-    with pytest.raises(ValueError, match="protocol downgrade"):
-        store.replace_contract(
-            revised,
-            actor="user",
-            summary="must not downgrade safety semantics",
-        )
-
-
-@pytest.mark.parametrize(
-    ("current_version", "revised_version"),
-    [("0.1.0", "0.2.0"), ("0.1.0", "0.3.0"), ("0.2.0", "0.3.0")],
-)
-def test_contract_revision_allows_upgrade_with_fresh_bound_approval(
-    tmp_path: Path,
-    current_version: str,
-    revised_version: str,
-) -> None:
-    store = create_version_store(tmp_path, current_version)
-    move_to_awaiting_approval(store)
-    revised_data = valid_contract_data(protocol_version=revised_version)
-    revised_data["contract_version"] = 2
+    revised_data["objective"] = "A clarified first-release objective"
 
     state = store.replace_contract(
         LoopContract.model_validate(revised_data),
         actor="user",
-        summary="approve upgraded safety semantics",
+        summary="approve revised contract",
     )
 
     authorization = store.current_contract_authorization()
     assert state.contract_version == 2
     assert authorization is not None
-    assert authorization.protocol_version == revised_version
+    assert authorization.protocol_version == "0.1.0"
+    assert authorization.contract_version == 2

@@ -1,92 +1,64 @@
-# Requirements: Loop Engineering
+# Requirements: Loop Engineering 0.1.0
 
-**Defined:** 2026-07-31
-**Core Value:** Agent 只能在明确批准且可验证的范围内自主执行，并且只有真实证据满足合同后才能完成。
+**Defined:** 2026-08-01
+**Core Value:** Agent 只能在明确批准且可验证的范围内自主执行，并且只有真实证据满足
+合同后才能完成。
 
-## v1 Requirements
+## First-release requirements
 
-### Core Protocol
+### Contract and authorization
 
-- [x] **CORE-01**: Core Protocol 与 Python 包版本均为 `0.3.0`
-- [x] **CORE-02**: `autonomous` 是唯一控制模式，合同省略 `mode` 时自动使用该模式
-- [x] **CORE-03**: 任何协议版本的合同显式填写 `collaborative` 都会校验失败
-- [x] **CORE-04**: Adapter 不再提供模式选择、降级或 collaborative 专属流程
-- [x] **CORE-05**: 0.3.0 明确拒绝旧 collaborative 合同与 Run，不执行静默转换或恢复
-- [x] **CORE-06**: 旧 0.1.0/0.2.0 autonomous 合同仍可读取，并保留其原有风险与最终门禁语义
+- [x] **CORE-01**: Core、Python 包、Schema、模板和 Adapter 只接受或生成 `0.1.0`。
+- [x] **CORE-02**: `autonomous` 是唯一控制模式。
+- [x] **CORE-03**: 合同必须包含设计决定与完整最小动作计划，并在准入时通过真实 Gate
+  预检。
+- [x] **CORE-04**: 一次完整合同批准绑定协议、合同版本、规范化 SHA-256 和全部风险 ID。
+- [x] **CORE-05**: 新目标、动作、权限、风险、预算或交付边界必须形成完整合同修订。
 
-### Autonomous Skill
+### Runtime closure
 
-- [x] **AUTO-01**: `$loop-engine` 启动的所有新任务均为 Autonomous，不询问或展示模式选择
-- [x] **AUTO-02**: 一次完整合同批准后，Skill 自主完成设计、计划、执行、验证、Checker、修正和决策循环
-- [x] **AUTO-03**: Skill 根据测试、命令反馈和 Checker 结论自主选择下一最小动作
-- [x] **AUTO-04**: Skill 仅在合同扩展、批准失效、平台或外部硬门、预算终止、缺少必要权限或输入以及用户取消时暂停
-- [x] **AUTO-05**: 跨 turn 续跑重新验证 Goal、Run、账本、授权、预算和未决 intent，不依赖对话记忆或猜测最新 Run
+- [x] **RUN-01**: 目标项目只创建 `.loop-engine/` 一个 Loop-owned 顶层目录。
+- [x] **RUN-02**: Run、草稿、证据和缓存全部位于 `.loop-engine/`，控制路径不得通过
+  symlink 或 junction 逃逸。
+- [x] **RUN-03**: 每次外部状态变更都有匹配的 intent/result；未决 intent 调和前禁止
+  下一动作。
+- [x] **RUN-04**: 等待批准和暂停不消耗活跃时间预算。
+- [x] **RUN-05**: 批准后在合同闭包内持续执行，只在合同修订、外部硬门、无法调和的
+  intent、取消或权威终态暂停。
 
-### CLI and Lifecycle
+### Evidence and safety
 
-- [x] **CLI-01**: Agent Shell CLI 的唯一入口是 `loop-engine`，并完整提供现有命令组
-- [x] **CLI-02**: 包不注册 `loop-engineering` 或 `loop-agent` CLI 别名
-- [x] **CLI-03**: Adapter、README、接入指南、示例和测试中的执行命令全部使用 `loop-engine`
-- [x] **LIFE-01**: 生命周期管理器继续管理 Python 包 `loop-engineering`，并正确安装、验证和移除 `loop-engine` 可执行入口
-- [x] **NAME-01**: 产品名、Python 包名和仓库名保持 Loop Engineering / `loop-engineering`，Codex Skill 触发词保持 `$loop-engine`
+- [x] **EVID-01**: 验证只在 `.loop-engine/cache/` 的一次性 Git 快照中运行。
+- [x] **EVID-02**: timeout、启动失败、快照失败和源工作区变化都产生关闭的失败证据。
+- [x] **SAFE-01**: 仓库及 worktree 使用解析后的绝对路径；动作同时匹配计划、范围、
+  权限和精确风险授权。
+- [x] **SAFE-02**: 强推、历史改写、reset-hard、自动合并和部署永久禁止。
+- [x] **SAFE-03**: 所有子进程使用 argv、`shell=False` 和明确 timeout。
 
-### Safety and Verification
+### Product surfaces
 
-- [x] **SAFE-01**: 一次批准继续绑定合同版本、规范化 SHA-256 和完整风险 ID
-- [x] **SAFE-02**: 精确风险授权、Checker、证据新鲜度、范围检查和预算在 Autonomous-only 模式下继续生效
-- [x] **SAFE-03**: 强推、历史改写、`reset --hard`、自动合并和自动部署继续永久禁止
-- [x] **TEST-01**: 模型、通用模板和生成 JSON Schema 一致且可以确定性重建
-- [x] **TEST-02**: 协议、CLI、生命周期、Adapter 合同、全量测试、Ruff、构建和 `git diff --check` 全部通过
+- [x] **NAME-01**: Python 分发包保持 `loop-engineering`。
+- [x] **NAME-02**: Codex 托管安装目录、Skill 名和唯一 Agent Shell CLI 均为
+  `loop-engine`。
+- [x] **DOC-01**: README、接入指南、协议、发布身份和 Adapter 对首版语义一致。
+- [x] **TEST-01**: 全量测试、Ruff、Schema 重建、构建和差异完整性检查全部通过。
 
-## v2 Requirements
+## Out of scope
 
-None. 当前里程碑只交付上述 Autonomous-only 0.3.0 能力。
-
-## Out of Scope
-
-| Feature | Reason |
-|---------|--------|
-| collaborative 控制模式 | 用户明确要求从新版 Core 与 Adapter 中彻底移除 |
-| collaborative 合同或 Run 自动迁移 | 静默转换会伪造授权语义；0.3.0 明确拒绝读取 |
-| `loop-engineering` 或 `loop-agent` CLI 别名 | `loop-engine` 是唯一执行入口 |
-| 产品、Python 包或仓库重命名 | 变更仅针对执行入口与控制模式 |
-| scheduler、daemon、自动合并或自动部署 | 超出当前目标，并与现有安全边界冲突 |
-| 绕过合同、平台权限或永久禁止项 | Autonomous 只在批准范围内自主，不是无限权限 |
+- 协议版本分支、旧合同读取、升级、降级或自动迁移。
+- scheduler、daemon、自动合并、自动部署、强推或历史改写。
+- 隐式生产环境或敏感数据权限。
+- 将 Codex 专有状态引入 Core。
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
-
-| Requirement | Phase | Status |
-|-------------|-------|--------|
-| CORE-01 | Phase 1 | Complete |
-| CORE-02 | Phase 1 | Complete |
-| CORE-03 | Phase 1 | Complete |
-| CORE-04 | Phase 3 | Complete |
-| CORE-05 | Phase 1 | Complete |
-| CORE-06 | Phase 1 | Complete |
-| AUTO-01 | Phase 3 | Complete |
-| AUTO-02 | Phase 3 | Complete |
-| AUTO-03 | Phase 3 | Complete |
-| AUTO-04 | Phase 3 | Complete |
-| AUTO-05 | Phase 3 | Complete |
-| CLI-01 | Phase 2 | Complete |
-| CLI-02 | Phase 2 | Complete |
-| CLI-03 | Phase 4 | Complete |
-| LIFE-01 | Phase 2 | Complete |
-| NAME-01 | Phase 4 | Complete |
-| SAFE-01 | Phase 1 | Complete |
-| SAFE-02 | Phase 1 | Complete |
-| SAFE-03 | Phase 1 | Complete |
-| TEST-01 | Phase 1 | Complete |
-| TEST-02 | Phase 4 | Complete |
-
-**Coverage:**
-
-- v1 requirements: 21 total
-- Mapped to phases: 21
-- Unmapped: 0 ✓
+| Requirement group | Delivery | Status |
+|---|---|---|
+| CORE | Contract models, GatePolicy, ledger | Complete |
+| RUN | Project layout, state machine, Adapter | Complete |
+| EVID / SAFE | ValidationRunner, Git Shell, strict paths | Complete |
+| NAME / DOC | Lifecycle manager and release documents | Complete |
+| TEST | Regression, static, schema and package evidence | Complete |
 
 ---
-*Requirements defined: 2026-07-31*
-*Last updated: 2026-07-31 after roadmap creation*
+*Last updated: 2026-08-01 after first-release convergence*

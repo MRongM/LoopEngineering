@@ -1,12 +1,11 @@
 ---
 name: loop-engine
-description: Run evidence-gated Loop Engineering workflows and manage the Codex adapter lifecycle.
+description: Use when a coding task must run autonomously inside an approved, evidence-gated Loop Contract.
 ---
 
 # Loop Engineering for Codex
 
-Compatible Core: >=0.3,<0.4
-<!-- Legacy lifecycle updater compatibility: name: loop-engineering -->
+Core Protocol: 0.1.0
 
 ## Task-scoped continuation
 
@@ -15,7 +14,7 @@ Only explicit `$loop-engine` may start a new Loop task.
 After a task is uniquely bound, later user messages may continue it in natural language.
 Never use implicit selection to start or adopt a task.
 The trigger name does not rename Loop Engineering, the `loop-engineering` Python
-distribution, repository, or managed checkout.
+distribution, or repository.
 
 Natural-language clarification, approval, revision, pause recovery, cancellation and feedback
 are permitted only when they unambiguously address the same bound task. An unrelated message
@@ -31,7 +30,8 @@ Resolve admission before Intake, approval, Run adoption or any other mutation:
 4. If the binding is missing, ambiguous, stale, unrelated, cancelled or terminal, make no
    Loop mutation. Require explicit `$loop-engine` for a new task or conservative recovery.
 
-Do not scan `.loop-runs/` for the newest Draft or Run, rank candidates by time, or adopt a
+Do not scan `.loop-engine/drafts/` or `.loop-engine/runs/` for the newest Draft or Run,
+rank candidates by time, or adopt a
 task because its topic resembles the current message.
 
 ### Pending Draft binding
@@ -49,7 +49,8 @@ the conversation binding; a later message cannot silently revive or adopt that D
 
 Every newly approved Codex Loop task uses Goal binding by default. Before approval, include
 exact `platform_state` operations for both `codex-goal:create:<resolved-run-dir>` and
-`codex-goal:complete:<resolved-run-dir>` in the complete Loop Contract risk disclosure.
+`codex-goal:complete:<resolved-run-dir>` in both the complete Loop Contract risk disclosure
+and `execution_plan.actions`.
 Do not create the Goal before the Run exists and current contract approval is recorded.
 
 The canonical Goal marker is `$loop-engine goal-bridge/v1`; its objective must begin with:
@@ -126,14 +127,14 @@ revisions remain independent inner limits. Neither budget changes or authorizes 
 
 Installation and removal are user-operated bootstrap actions, not Maker-loop
 actions. Explain the exact command, but never run it on the user's behalf. The
-managed checkout is exactly `<CODEX_HOME>/skills/loop-engineering`; resolve
+managed checkout is exactly `<CODEX_HOME>/skills/loop-engine`; resolve
 `CODEX_HOME` explicitly, defaulting to `~/.codex` only when it is unset.
 
 Unix install reference:
 
 ```bash
 codex_home="${CODEX_HOME:-$HOME/.codex}"
-skill_dir="$codex_home/skills/loop-engineering"
+skill_dir="$codex_home/skills/loop-engine"
 mkdir -p "$codex_home/skills" && \
 git clone --depth 1 --branch master "https://github.com/MRongM/LoopEngineering.git" "$skill_dir" && \
 python3 "$skill_dir/adapters/codex/scripts/manage.py" install --codex-home "$codex_home" && \
@@ -144,7 +145,7 @@ PowerShell install reference:
 
 ```powershell
 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
-$skillDir = Join-Path $codexHome "skills/loop-engineering"
+$skillDir = Join-Path $codexHome "skills/loop-engine"
 $ErrorActionPreference = "Stop"
 New-Item -ItemType Directory -Force -Path (Join-Path $codexHome "skills") | Out-Null
 git clone --depth 1 --branch master "https://github.com/MRongM/LoopEngineering.git" "$skillDir"
@@ -169,12 +170,12 @@ on Unix or replace `python3` with `py -3.12` in PowerShell.
 Use the copy-paste Unix and Windows commands in the repository `README.md` and
 `docs/adoption.md`; run `manage.py --help` for the local command reference.
 
-Read `PROTOCOL.md`, the target project's `.loop-engineering/project.yaml`,
+Read `PROTOCOL.md`, the target project's `.loop-engine/project.yaml`,
 every existing configured instruction file, all applicable `AGENTS.md`, and the
 approved Loop Contract before modifying state.
 
 Resolve `PROTOCOL.md` from the LoopEngineering repository containing this Skill.
-If it is absent or its version does not satisfy `>=0.3,<0.4`, stop instead of
+If it is absent or its version is not exactly `0.1.0`, stop instead of
 silently falling back.
 
 ## Hard gate
@@ -184,41 +185,49 @@ or call an external write API until the Loop Contract has been shown to the user
 and explicitly approved. The contract's exact preauthorization may cover later
 Git actions. New targets or permissions require a revised approval.
 
-The sole preapproval write is the adapter-owned contract draft at
-`<project-root>/.loop-runs/.drafts/<loop-id>/contract.yaml` for schema validation.
-Perform every adapter-owned preparatory write inside the target project.
+The only preapproval writes are the canonical project control root created by
+`loop-engine project init --root "<project-root>"` and the adapter-owned contract draft at
+`<project-root>/.loop-engine/drafts/<loop-id>/contract.yaml` for schema validation.
+The control root contains only `.loop-engine/project.yaml`, its internal `.gitignore`,
+`.loop-engine/drafts/`, `.loop-engine/runs/<loop-id>/` and `.loop-engine/cache/`;
+never create another Loop-owned top-level path.
 Use resolved absolute paths for every `repositories[].path` because relative paths are
 resolved from the nested contract location.
 Never create adapter-owned control files outside the target project, including system
-temporary directories and the user's home directory. After the run exists, place every
-path-based CLI input, validation cache and temporary output under the run directory; use
-`<run-dir>/inputs/` for request and context documents. Never stage or commit `.loop-runs/`
-content.
+temporary directories and the user's home directory. After the run exists, use
+`<run-dir>/inputs/` for request and context documents and `.loop-engine/cache/` for isolated
+validation snapshots. Never stage or commit runtime content; only
+`.loop-engine/project.yaml` and `.loop-engine/.gitignore` may be committed.
 
 ## Intake
 
 1. Classify the request as read-only or state-changing.
-2. Set `protocol_version: 0.3.0` and `mode: autonomous` for every new task.
+2. Set `protocol_version: 0.1.0` and `mode: autonomous` for every new task.
    Do not ask the user to choose a control mode. Reject incompatible mode input instead of
    converting, recovering or inheriting it from another task. Resolve admission
    without a separate mode prompt.
 3. Inspect the repository, instructions, tests, recent commits and dirty state read-only.
 4. Draft `contract.yaml` from the Core template with exact repositories, paths,
    acceptance criteria, argv validation, budget, permissions and Git targets. For
-   nontrivial work, include the key design decisions and the minimal implementation plan.
+   every task, persist the key decisions in `execution_plan.design_decisions` and the
+   complete minimal action boundary in `execution_plan.actions`; every planned runtime
+   ActionRequest must evaluate to `allow` under the
+   approved contract. Set every validation command to `workspace_policy: isolated`.
    List every planned dangerous, production, sensitive-data and Git mutation in
    `authorized_operations` before asking for approval.
    Every `authorized_operations` entry needs `risk_id`, `kind`, `repository_id`,
    exact `target`, `risk_level`, `impact`, `worst_case`, `recovery` and `evidence`.
+   Represent worktree creation as `git_worktree` with exact target
+   `<branch>@<resolved-absolute-worktree-path>` in both the risk grant and action plan.
    Keep the unapproved draft at
-   `.loop-runs/.drafts/<loop-id>/contract.yaml` relative to the project root. Populate
+   `.loop-engine/drafts/<loop-id>/contract.yaml` relative to the project root. Populate
    every `repositories[].path` with its resolved absolute Git root.
-5. Always use `contract_approval`; do not add `design_approval` or `plan_approval` by default.
-   Do not add `final_acceptance` by default. Preserve an extra gate only when the current
-   user instruction, project rules or an existing compatible legacy contract explicitly
-   requires it. Risk level alone never creates another human gate.
+5. Use exactly one human gate: `contract_approval`. Fold all required design, plan and
+   risk decisions into the complete contract summary. If a higher-priority rule cannot be
+   represented by that approval, do not claim the contract is execution-closed.
 6. Run `loop-engine contract validate "<contract-path>"`.
-7. Present one `Ready-to-execute Loop Contract` summary in this order: mode and
+7. Batch every unresolved pre-execution decision into the complete summary. Present one
+   `Ready-to-execute Loop Contract` summary in this order: mode and
    objective; in/out of scope; acceptance criteria and validation; key design and
    implementation plan; risk, permissions, exact Git targets and budget; preauthorized
    actions, remaining pause conditions and stop conditions. In autonomous mode, label
@@ -236,7 +245,10 @@ content.
    transitions and `contract_approval` with `loop-engine run approval`. Core binds
    that event to the current contract version, SHA-256 and accepted risk IDs. Then
    advance through designing or planning toward execution without another approval
-   unless an explicit extra gate applies.
+   unless a genuine scope, permission or risk change requires a complete revision.
+   After approval, do not ask for routine confirmations.
+   Accumulate non-blocking questions and report them with the final result; only the hard
+   boundaries below may interrupt.
 
 ## Autonomous decision loop
 
@@ -245,6 +257,7 @@ After the current bound contract approval, advance through
 routine confirmation between stages. Each iteration selects one unmet acceptance criterion,
 chooses the next smallest action inside the approved scope, observes real feedback, records
 fresh evidence, applies the required Checker verdict and then makes exactly one state decision.
+The action must also be contained by `execution_plan`; allowed paths alone do not expand it.
 
 | Observed facts | Required decision |
 |---|---|
@@ -273,13 +286,10 @@ For each unmet acceptance criterion:
    - `allow`: continue without another human confirmation.
    - `pause` with `required_gate=contract_revision`: add the new exact target,
      permission and full risk disclosure to the next contract version, then request
-     one revised complete-summary approval; do not record `dangerous_action` for this route.
+     one revised complete-summary approval.
    - `pause` with `required_gate=contract_approval`: the current bound approval is
      missing or stale; return to the complete contract approval instead of showing an
      isolated risk prompt.
-   - `pause` with `required_gate=dangerous_action`: this is a compatible legacy 0.1
-     Autonomous gate. Show the returned professional confirmation and record the explicit
-     decision with `loop-engine run approval`.
    - `deny`: record the rejection and never execute the operation.
 3. Immediately before every approved external state change, run
    `loop-engine run intent` with the exact action and target.
@@ -292,6 +302,9 @@ For each unmet acceptance criterion:
    separate successful operation. Completion derives per-repository delivery only
    from these current-contract result events, never from prose.
 6. Run `loop-engine evidence run "<run-dir>" "<VAL-ID>"`.
+   Core executes validation in a disposable Git snapshot under
+   `.loop-engine/cache/`, closes timeout/start failures as failed results and rejects any
+   concurrent mutation of the source repository.
 7. Do not repeat the same failed strategy more than once.
 8. For multiple repositories, follow the contract's acyclic `depends_on` order,
    create one branch/PR per repository, and list prerequisite PRs in each dependent PR.
@@ -327,10 +340,9 @@ creates another human gate or final acceptance.
 - A material target, scope, evidence, dangerous permission or budget change pauses the
   run, increments `contract_version`, re-enters contract_drafting/awaiting_approval,
   and invokes `loop-engine run revise` only after explicit approval.
-- Record the combined execution authorization as `contract_approval`. Record
-  `design_approval` or `plan_approval` separately only when an applicable rule or the
-  approved contract explicitly requires that gate. Record final acceptance separately;
-  a rejection never permits a forward transition.
+- Record the combined execution authorization as `contract_approval`. The contract does
+  not record separate design, plan, dangerous-action or final-acceptance gates; a rejection
+  never permits a forward transition.
 
 ## Hard pause and stop boundaries
 
@@ -357,22 +369,21 @@ contract-revision prompts.
 
 | Situation | Adapter action |
 |---|---|
-| New task | Set Autonomous Protocol 0.3 in the complete contract |
+| New task | Set execution-closed Autonomous Protocol 0.1 in the complete contract |
 | Initial state-changing task | Request one approval of the ready-to-execute summary |
 | Default design and plan stages | Continue without another approval |
-| Explicit `design_approval` or `plan_approval` | Pause at the declared extra gate |
+| Design, plan and disclosed danger decisions | Include them in the one complete approval |
 | Autonomous exact disclosed risk | Continue from the bound contract approval |
 | Autonomous new scope, permission or risk | Request one revised complete-summary approval |
-| Compatible legacy 0.1 dangerous action | Run the exact `dangerous_action` gate |
 
 ## Common approval mistakes
 
-- Every new task is Autonomous Protocol 0.3; a standalone mode prompt adds no authorization.
+- Every new task is execution-closed Autonomous Protocol 0.1; a standalone mode prompt adds no authorization.
 - Put design and plan decisions in the ready-to-execute summary; default follow-up approval
   prompts fragment one decision into several.
 - Treat scope questions as information gathering and the complete-summary response as
   authorization; never infer approval from partial answers.
-- In Autonomous `0.2.0/0.3.0`, treat an emergent danger as contract scope change and bundle it
+- Treat an emergent danger as a contract scope change and bundle it
   into one revision approval; a standalone danger prompt would recreate the duplicate gate.
 - Do not treat a contract file by itself as proof of risk acceptance. Use the run-backed
   gate check so the current hash and accepted risk IDs are verified.
@@ -397,7 +408,7 @@ final report from `templates/final-report.md`.
 
 Set `scope_valid` in CompletionContext only from
 `loop-engine scope check "<contract-path>"`; do not infer it from Maker prose.
-Derive `checker_verdict`, `human_accepted`, `gates_clear` and
+Derive `checker_verdict`, `gates_clear` and
 `contract_current` from `loop-engine run status "<run-dir>"`: unresolved
 intent IDs, a paused state, or a required contract gate without an approval event make
 `gates_clear=false`, and contract versions must match.

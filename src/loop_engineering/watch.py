@@ -8,16 +8,15 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TextIO
 
-import yaml
-
 from loop_engineering.contract import load_contract
+from loop_engineering.layout import PROJECT_CONFIG_NAME, RUNS_DIR_NAME, control_root
 from loop_engineering.ledger import RunStore
-from loop_engineering.models.contract import StrictModel
+from loop_engineering.models.base import StrictModel
 from loop_engineering.models.evidence import EvidenceRecord
 from loop_engineering.models.run import CheckerVerdict, EventKind, LoopStatus
-from loop_engineering.project import ProjectConfig
+from loop_engineering.project import ProjectConfig, load_project_config
 from loop_engineering.redaction import redact
-from loop_engineering.state_machine import TERMINAL
+from loop_engineering.state_machine import TERMINAL, active_elapsed_seconds
 
 _ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|[@-_])")
 
@@ -79,11 +78,10 @@ def discover_project(start: Path) -> tuple[Path, ProjectConfig]:
     if current.is_file():
         current = current.parent
     for candidate in (current, *current.parents):
-        config_path = candidate / ".loop-engineering" / "project.yaml"
+        config_path = control_root(candidate) / PROJECT_CONFIG_NAME
         if config_path.is_file():
-            raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-            return candidate, ProjectConfig.model_validate(raw)
-    raise FileNotFoundError("no .loop-engineering/project.yaml found")
+            return candidate, load_project_config(candidate)
+    raise FileNotFoundError("no .loop-engine/project.yaml found")
 
 
 def _load_run_progress(run_dir: Path, *, now: datetime) -> RunProgress:
@@ -164,7 +162,7 @@ def _load_run_progress(run_dir: Path, *, now: datetime) -> RunProgress:
         max_iterations=contract.budget.max_iterations,
         elapsed_minutes=max(
             0,
-            int((now - state.started_at).total_seconds() / 60),
+            int(active_elapsed_seconds(state, now=now) / 60),
         ),
         max_minutes=contract.budget.max_minutes,
         checker_revisions_used=state.checker_revisions_used,
@@ -197,8 +195,8 @@ def load_dashboard(
     *,
     now: datetime | None = None,
 ) -> WatchDashboard:
-    project_root, config = discover_project(start)
-    run_root = project_root / config.run_root
+    project_root, _ = discover_project(start)
+    run_root = control_root(project_root) / RUNS_DIR_NAME
     generated_at = now or datetime.now(UTC)
     runs: list[RunProgress] = []
     warnings: list[str] = []

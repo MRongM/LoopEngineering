@@ -12,6 +12,11 @@ TERMINAL = {
     LoopStatus.BUDGET_EXHAUSTED,
 }
 
+NON_EXECUTING = {
+    LoopStatus.AWAITING_APPROVAL,
+    LoopStatus.PAUSED,
+}
+
 ALLOWED: dict[LoopStatus, set[LoopStatus]] = {
     LoopStatus.INTAKE: {LoopStatus.DISCOVERING},
     LoopStatus.DISCOVERING: {LoopStatus.CONTRACT_DRAFTING, LoopStatus.BLOCKED},
@@ -80,6 +85,15 @@ def transition(
         raise IllegalTransition(f"{state.status.value} -> {target.value} is illegal")
     timestamp = now or datetime.now(UTC)
     updates: dict[str, object] = {"status": target, "updated_at": timestamp}
+    was_non_executing = state.status in NON_EXECUTING
+    will_be_non_executing = target in NON_EXECUTING
+    if will_be_non_executing and not was_non_executing:
+        updates["paused_at"] = timestamp
+    elif was_non_executing and not will_be_non_executing:
+        paused_at = state.paused_at or state.updated_at
+        paused_delta = max(0.0, (timestamp - paused_at).total_seconds())
+        updates["paused_seconds"] = state.paused_seconds + paused_delta
+        updates["paused_at"] = None
     if target is LoopStatus.EXECUTING:
         updates["iterations_used"] = state.iterations_used + 1
     if target is LoopStatus.PAUSED:
@@ -87,6 +101,18 @@ def transition(
     else:
         updates["pause_reason"] = None
     return state.model_copy(update=updates)
+
+
+def active_elapsed_seconds(
+    state: LoopState,
+    *,
+    now: datetime | None = None,
+) -> float:
+    current = now or datetime.now(UTC)
+    paused_seconds = state.paused_seconds
+    if state.paused_at is not None:
+        paused_seconds += max(0.0, (current - state.paused_at).total_seconds())
+    return max(0.0, (current - state.started_at).total_seconds() - paused_seconds)
 
 
 def budget_status(
@@ -99,7 +125,7 @@ def budget_status(
     exhaustion_reasons: list[str] = []
     if state.iterations_used >= contract.budget.max_iterations:
         exhaustion_reasons.append("iteration limit reached")
-    elapsed_minutes = (current - state.started_at).total_seconds() / 60
+    elapsed_minutes = active_elapsed_seconds(state, now=current) / 60
     if elapsed_minutes >= contract.budget.max_minutes:
         exhaustion_reasons.append("time limit reached")
     if (

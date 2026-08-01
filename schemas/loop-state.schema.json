@@ -68,6 +68,25 @@
       "default": null,
       "title": "Pause Reason"
     },
+    "paused_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Paused At"
+    },
+    "paused_seconds": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Paused Seconds",
+      "type": "number"
+    },
     "same_strategy_retries": {
       "default": 0,
       "minimum": 0,

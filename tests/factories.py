@@ -2,11 +2,11 @@ from pathlib import Path
 from typing import Any
 
 
-def valid_contract_data(*, protocol_version: str = "0.3.0") -> dict[str, Any]:
-    return {
+def valid_contract_data() -> dict[str, Any]:
+    data: dict[str, Any] = {
         "loop_id": "loop-example-001",
         "contract_version": 1,
-        "protocol_version": protocol_version,
+        "protocol_version": "0.1.0",
         "objective": "Add one verified example behavior",
         "mode": "autonomous",
         "repositories": [
@@ -70,14 +70,39 @@ def valid_contract_data(*, protocol_version: str = "0.3.0") -> dict[str, Any]:
         "assumptions": ["The repository uses Python"],
         "stop_conditions": ["done", "blocked", "budget_exhausted"],
     }
+    data["validation_commands"][0]["workspace_policy"] = "isolated"
+    data["execution_plan"] = {
+        "design_decisions": [
+            "Keep Core tool-independent and persist the approved execution boundary."
+        ],
+        "actions": [
+            {
+                "kind": "file_write",
+                "repository_id": "target",
+                "target": "src/",
+                "impact": "Changes implementation files in the approved source boundary",
+                "risk": "A regression may be introduced",
+                "recovery": "Restore affected files or apply a forward fix",
+                "evidence": "VAL-1 verifies the acceptance criterion",
+            },
+            {
+                "kind": "file_write",
+                "repository_id": "target",
+                "target": "tests/",
+                "impact": "Changes tests in the approved test boundary",
+                "risk": "A test may encode the wrong behavior",
+                "recovery": "Correct the test against the approved contract",
+                "evidence": "VAL-1 executes the focused tests",
+            },
+        ],
+    }
+    return data
 
 
 def autonomous_risk_contract_data(
     kind: str = "production_access",
-    *,
-    protocol_version: str = "0.3.0",
 ) -> dict[str, Any]:
-    data = valid_contract_data(protocol_version=protocol_version)
+    data = valid_contract_data()
     data["mode"] = "autonomous"
     data["risk_level"] = "high"
     data["human_gates"] = ["contract_approval"]
@@ -99,4 +124,22 @@ def autonomous_risk_contract_data(
             "evidence": "AC-1 requires production verification",
         }
     ]
+    action: dict[str, Any] = {
+        "kind": kind,
+        "repository_id": "target",
+        "target": "production/customer-index",
+        "impact": "Reads or changes the approved production target",
+        "risk": "Sensitive records or external state may be affected",
+        "recovery": "Stop the operation and apply the disclosed recovery plan",
+        "evidence": "AC-1 requires the exact approved operation",
+    }
+    if kind == "database_change":
+        action.update(
+            {
+                "forward_plan": "apply the approved forward-only schema change",
+                "compatibility_analysis": "the approved versions remain compatible",
+                "recovery": "apply the approved compensating forward migration",
+            }
+        )
+    data["execution_plan"]["actions"].append(action)
     return data

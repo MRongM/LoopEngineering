@@ -1,18 +1,19 @@
 # Loop Engineering
 
-Loop Engineering 0.3.0 provides evidence-gated, recoverable execution loops for
+Loop Engineering 0.1.0 provides evidence-gated, recoverable execution loops for
 coding agents. The Core is tool-independent; the first adapter targets Codex.
-Protocol 0.3 is Autonomous-only: every new task uses one approved contract and
-continues inside its verified scope without a control-mode choice.
+Protocol 0.1 is Autonomous-only and execution-closed: every new task persists and
+preflights its design and action plan before one approval, then continues inside that
+verified boundary without routine confirmation.
 
 ## Use it now
 
 Without installing code, reference the approved design in your task and require an
 approved Loop Contract before any mutation:
 
-- [0.3 Autonomous-only design](docs/superpowers/specs/2026-07-31-loop-engineering-0.3-autonomous-only-design.md)
+- [0.1 execution-closure design](docs/superpowers/specs/2026-08-01-loop-engineering-0.1-execution-closure-design.md)
 - [Cross-project adoption guide](docs/adoption.md)
-- [Compatibility and naming](docs/compatibility.md)
+- [Release identity and boundaries](docs/release-identity.md)
 
 ## Install in Codex
 
@@ -25,14 +26,14 @@ checked-in lifecycle manager and never overwrites an existing destination.
 Run from any directory:
 
 ```bash
-codex_home="${CODEX_HOME:-$HOME/.codex}"; skill_dir="$codex_home/skills/loop-engineering"; mkdir -p "$codex_home/skills" && git clone --depth 1 --branch master "https://github.com/MRongM/LoopEngineering.git" "$skill_dir" && python3 "$skill_dir/adapters/codex/scripts/manage.py" install --codex-home "$codex_home" && loop-engine --version
+codex_home="${CODEX_HOME:-$HOME/.codex}"; skill_dir="$codex_home/skills/loop-engine"; mkdir -p "$codex_home/skills" && git clone --depth 1 --branch master "https://github.com/MRongM/LoopEngineering.git" "$skill_dir" && python3 "$skill_dir/adapters/codex/scripts/manage.py" install --codex-home "$codex_home" && loop-engine --version
 ```
 
 ### Windows PowerShell install
 
 ```powershell
 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
-$skillDir = Join-Path $codexHome "skills/loop-engineering"
+$skillDir = Join-Path $codexHome "skills/loop-engine"
 $ErrorActionPreference = "Stop"
 New-Item -ItemType Directory -Force -Path (Join-Path $codexHome "skills") | Out-Null
 git clone --depth 1 --branch master "https://github.com/MRongM/LoopEngineering.git" "$skillDir"
@@ -80,7 +81,7 @@ loop-engine watch --all
 ```
 
 The first command shows active and paused Runs; `--all` also includes terminal history.
-The command discovers the nearest `.loop-engineering/project.yaml` by walking upward and
+The command discovers the nearest `.loop-engine/project.yaml` by walking upward and
 does not accept a Run-directory argument. An interactive terminal refreshes in place until
 no active Run remains or you press Ctrl-C; redirected output emits one plain snapshot.
 Watching never adopts, resumes, approves or otherwise mutates a Run, and displayed evidence
@@ -101,14 +102,14 @@ reported `uv` problem and rerun the same command; the manager never deletes or r
 ### Unix one-line update
 
 ```bash
-codex_home="${CODEX_HOME:-$HOME/.codex}"; skill_dir="$codex_home/skills/loop-engineering"; python3 "$skill_dir/adapters/codex/scripts/manage.py" update --codex-home "$codex_home" && loop-engine --version
+codex_home="${CODEX_HOME:-$HOME/.codex}"; skill_dir="$codex_home/skills/loop-engine"; python3 "$skill_dir/adapters/codex/scripts/manage.py" update --codex-home "$codex_home" && loop-engine --version
 ```
 
 ### Windows PowerShell update
 
 ```powershell
 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
-$skillDir = Join-Path $codexHome "skills/loop-engineering"
+$skillDir = Join-Path $codexHome "skills/loop-engine"
 py -3.12 "$skillDir/adapters/codex/scripts/manage.py" update --codex-home "$codexHome"
 if ($LASTEXITCODE -ne 0) { throw "Loop Engineering update failed" }
 loop-engine --version
@@ -128,14 +129,14 @@ installation can still be cleaned up safely.
 ### Unix one-line uninstall
 
 ```bash
-codex_home="${CODEX_HOME:-$HOME/.codex}"; skill_dir="$codex_home/skills/loop-engineering"; python3 "$skill_dir/adapters/codex/scripts/manage.py" uninstall --codex-home "$codex_home" --yes
+codex_home="${CODEX_HOME:-$HOME/.codex}"; skill_dir="$codex_home/skills/loop-engine"; python3 "$skill_dir/adapters/codex/scripts/manage.py" uninstall --codex-home "$codex_home" --yes
 ```
 
 ### Windows PowerShell uninstall
 
 ```powershell
 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
-$skillDir = Join-Path $codexHome "skills/loop-engineering"
+$skillDir = Join-Path $codexHome "skills/loop-engine"
 py -3.12 "$skillDir/adapters/codex/scripts/manage.py" uninstall --codex-home "$codexHome" --yes
 ```
 
@@ -146,17 +147,19 @@ if the manager refuses the checkout, inspect and preserve the reported local sta
 
 The release has no scheduler, daemon, automatic merge, automatic deployment,
 force-push or history rewrite. Autonomous production or sensitive-data access is
-allowed only when the exact high risk is disclosed in a `0.3.0` contract and bound
+allowed only when the exact high risk is disclosed in a `0.1.0` contract and bound
 to its single approval; there is no implicit production authority. Runtime state
-under `.loop-runs/` is local and ignored by default.
+under `.loop-engine/` is local and ignored by its internal `.gitignore`; only
+`project.yaml` and that `.gitignore` may be tracked. Validation runs in disposable
+snapshots under `.loop-engine/cache/` so build artifacts cannot pollute the source workspace.
 
-## Names and compatibility
+## Names and release boundary
 
-The product and repository remain **Loop Engineering**. The Python distribution and
-managed checkout remain `loop-engineering`; the Codex Skill trigger remains
-`$loop-engine`; the only Agent Shell executable is `loop-engine`. The distribution
-does not install legacy CLI aliases. See [compatibility and naming](docs/compatibility.md)
-for supported legacy Autonomous contracts and deterministic rejection boundaries.
+The product and repository are **Loop Engineering**. The Python distribution is
+`loop-engineering`; the managed Codex checkout directory is `loop-engine`; the Codex Skill
+trigger is `$loop-engine`; and the only Agent Shell executable is `loop-engine`. This is the
+first release, so Core accepts only Protocol `0.1.0` and provides no version compatibility
+layer. See [release identity and boundaries](docs/release-identity.md).
 
 ## Development
 

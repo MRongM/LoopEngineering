@@ -1,10 +1,11 @@
 loop_id: loop-example-001
 contract_version: 1
-protocol_version: 0.3.0
+protocol_version: 0.1.0
 objective: Add one verified example behavior
 mode: autonomous
 repositories:
   - id: target
+    # Replace with the resolved absolute Git root before validation.
     path: .
     base_branch: master
     allowed_paths:
@@ -34,6 +35,7 @@ validation_commands:
       - AC-1
     timeout_seconds: 600
     requires_network: false
+    workspace_policy: isolated
 risk_level: low
 permissions:
   network: false
@@ -42,6 +44,24 @@ permissions:
   production_access: false
   sensitive_data: false
 authorized_operations: []
+execution_plan:
+  design_decisions:
+    - Keep Core tool-independent and persist the approved execution boundary.
+  actions:
+    - kind: file_write
+      repository_id: target
+      target: src/
+      impact: Changes implementation files in the approved source boundary
+      risk: A regression may be introduced
+      recovery: Restore affected files or apply a forward fix
+      evidence: VAL-1 verifies the acceptance criterion
+    - kind: file_write
+      repository_id: target
+      target: tests/
+      impact: Changes tests in the approved test boundary
+      risk: A test may encode the wrong behavior
+      recovery: Correct the test against the approved contract
+      evidence: VAL-1 executes the focused tests
 git_policy:
   targets:
     - repository_id: target

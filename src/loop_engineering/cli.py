@@ -12,15 +12,10 @@ from loop_engineering.contract import export_schemas, load_contract
 from loop_engineering.evidence import DoneEvaluator, ValidationRunner, evaluate_scope
 from loop_engineering.git_automation import GitAutomation
 from loop_engineering.ledger import RunStore
+from loop_engineering.models.action import ActionKind, ActionRequest
 from loop_engineering.models.evidence import CompletionContext
 from loop_engineering.models.run import CheckerVerdict, LoopStatus
-from loop_engineering.policy import (
-    ActionRequest,
-    GateOutcome,
-    GatePolicy,
-    GateRequirement,
-    render_confirmation,
-)
+from loop_engineering.policy import GateOutcome, GatePolicy
 from loop_engineering.project import initialize_project
 from loop_engineering.redaction import redact
 from loop_engineering.state_machine import BudgetCondition, budget_status
@@ -32,6 +27,117 @@ def _json(value: object, *, stream: IO[str] | None = None) -> None:
         json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False),
         file=stream or sys.stdout,
     )
+
+
+def _git_action_request(
+    automation: GitAutomation,
+    command: str,
+    repository_id: str,
+) -> tuple[ActionRequest, str]:
+    policy = automation.policy
+    if command == "prepare":
+        return (
+            ActionRequest(
+                kind=ActionKind.GIT_WORKTREE,
+                repository_id=repository_id,
+                target=f"{policy.branch}@{automation.worktree}",
+            ),
+            "prepare",
+        )
+    if command == "commit":
+        return (
+            ActionRequest(
+                kind=ActionKind.GIT_COMMIT,
+                repository_id=repository_id,
+                target=policy.branch or "",
+            ),
+            "commit",
+        )
+    if command == "push":
+        return (
+            ActionRequest(
+                kind=ActionKind.GIT_PUSH,
+                repository_id=repository_id,
+                target=f"{policy.remote}/{policy.branch}",
+            ),
+            "push",
+        )
+    if command == "pr":
+        return (
+            ActionRequest(
+                kind=ActionKind.CREATE_PR,
+                repository_id=repository_id,
+                target=f"{policy.branch}->{policy.pr_target}",
+            ),
+            "create_pr",
+        )
+    raise AssertionError("unreachable Git command")
+
+
+def _run_git_action(args: argparse.Namespace, store: RunStore) -> dict[str, object]:
+    contract = load_contract(store.contract_path)
+    automation = GitAutomation(contract, args.repository_id)
+    request, operation = _git_action_request(
+        automation,
+        args.command,
+        args.repository_id,
+    )
+    decision = GatePolicy(
+        contract,
+        authorization=store.current_contract_authorization(),
+    ).evaluate(request)
+    if decision.outcome is not GateOutcome.ALLOW:
+        raise PermissionError(decision.reason)
+    if store.load_state().status is not LoopStatus.EXECUTING:
+        raise ValueError("Git mutation requires executing state")
+    action_id = store.record_intent(
+        actor="git",
+        summary=f"Git {operation}",
+        payload={"request": request.model_dump(mode="json")},
+    )
+    git_result: dict[str, object] = {
+        "operation": operation,
+        "repository_id": args.repository_id,
+        "success": False,
+    }
+    try:
+        if args.command == "prepare":
+            worktree = automation.prepare_worktree()
+            output: dict[str, object] = {"worktree": str(worktree)}
+            git_result["worktree"] = str(worktree)
+        elif args.command == "commit":
+            commit = automation.commit(args.path, args.message)
+            output = {"commit": commit}
+            git_result["commit_sha"] = commit
+        elif args.command == "push":
+            automation.push()
+            output = {"pushed": True}
+        elif args.command == "pr":
+            url = automation.create_pr(
+                args.title,
+                args.body_file.read_text(encoding="utf-8"),
+            )
+            output = {"url": url}
+            git_result["pr_url"] = url
+        else:
+            raise AssertionError("unreachable Git command")
+    except Exception as error:
+        git_result["error_type"] = type(error).__name__
+        store.record_result(
+            action_id=action_id,
+            actor="git",
+            summary=f"Git {operation} failed",
+            payload={"git": git_result},
+        )
+        raise
+    git_result["success"] = True
+    store.record_result(
+        action_id=action_id,
+        actor="git",
+        summary=f"Git {operation} succeeded",
+        payload={"git": git_result},
+    )
+    return output
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -47,7 +153,6 @@ def _parser() -> argparse.ArgumentParser:
     project_commands = project.add_subparsers(dest="command", required=True)
     project_init = project_commands.add_parser("init")
     project_init.add_argument("--root", type=Path, default=Path.cwd())
-    project_init.add_argument("--update-gitignore", action="store_true")
 
     contract = groups.add_parser("contract")
     contract_commands = contract.add_subparsers(dest="command", required=True)
@@ -184,10 +289,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 stream=sys.stdout,
             )
         elif (args.group, args.command) == ("project", "init"):
-            config = initialize_project(
-                args.root,
-                update_gitignore=args.update_gitignore,
-            )
+            config = initialize_project(args.root)
             _json(config.model_dump(mode="json"))
         elif (args.group, args.command) == ("contract", "validate"):
             contract = load_contract(args.path)
@@ -303,11 +405,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 policy = GatePolicy(load_contract(args.source))
             decision = policy.evaluate(request)
             output = decision.model_dump(mode="json")
-            if (
-                decision.outcome is GateOutcome.PAUSE
-                and decision.required_gate is GateRequirement.DANGEROUS_ACTION
-            ):
-                output["confirmation"] = render_confirmation(request, decision)
             _json(output)
         elif (args.group, args.command) == ("scope", "check"):
             result = evaluate_scope(load_contract(args.contract))
@@ -315,28 +412,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0 if result.valid else 6
         elif args.group == "git":
             store = RunStore.open(args.run_dir)
-            automation = GitAutomation(
-                load_contract(store.contract_path),
-                args.repository_id,
-            )
-            if args.command == "prepare":
-                _json({"worktree": str(automation.prepare_worktree())})
-            elif args.command == "commit":
-                _json({"commit": automation.commit(args.path, args.message)})
-            elif args.command == "push":
-                automation.push()
-                _json({"pushed": True})
-            elif args.command == "pr":
-                _json(
-                    {
-                        "url": automation.create_pr(
-                            args.title,
-                            args.body_file.read_text(encoding="utf-8"),
-                        )
-                    }
-                )
-            else:
-                raise AssertionError("unreachable Git command")
+            _json(_run_git_action(args, store))
         else:
             raise AssertionError("unreachable command")
     # The CLI boundary converts all failures into sanitized, machine-readable output.

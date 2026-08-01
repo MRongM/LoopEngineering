@@ -1,34 +1,11 @@
 from enum import StrEnum
 
-from pydantic import Field, model_validator
-
 from loop_engineering.contract import contract_fingerprint
-from loop_engineering.models.contract import LoopContract, StrictModel
+from loop_engineering.models.action import ActionKind, ActionRequest
+from loop_engineering.models.base import StrictModel
+from loop_engineering.models.contract import LoopContract
 from loop_engineering.models.run import ContractAuthorization
 from loop_engineering.paths import is_allowed_path
-
-
-class ActionKind(StrEnum):
-    FILE_WRITE = "file_write"
-    BATCH_WRITE = "batch_write"
-    FILE_DELETE = "file_delete"
-    BATCH_MOVE = "batch_move"
-    DEPENDENCY_CHANGE = "dependency_change"
-    GLOBAL_PACKAGE = "global_package"
-    DATABASE_CHANGE = "database_change"
-    SYSTEM_CONFIG = "system_config"
-    PERMISSION_CHANGE = "permission_change"
-    NETWORK = "network"
-    SENSITIVE_DATA = "sensitive_data"
-    PRODUCTION_ACCESS = "production_access"
-    PLATFORM_STATE = "platform_state"
-    GIT_COMMIT = "git_commit"
-    GIT_PUSH = "git_push"
-    CREATE_PR = "create_pr"
-    FORCE_PUSH = "force_push"
-    HISTORY_REWRITE = "history_rewrite"
-    MERGE = "merge"
-    DEPLOY = "deploy"
 
 
 class GateOutcome(StrEnum):
@@ -40,31 +17,6 @@ class GateOutcome(StrEnum):
 class GateRequirement(StrEnum):
     CONTRACT_APPROVAL = "contract_approval"
     CONTRACT_REVISION = "contract_revision"
-    DANGEROUS_ACTION = "dangerous_action"
-
-
-class ActionRequest(StrictModel):
-    kind: ActionKind
-    target: str = Field(min_length=1)
-    repository_id: str | None = None
-    impact: str = "External state will change"
-    risk: str = "The change may be difficult to recover"
-    recovery: str = "Use a forward fix or an approved revert"
-    evidence: str = "The approved Loop Contract requires this action"
-    forward_plan: str | None = None
-    compatibility_analysis: str | None = None
-
-    @model_validator(mode="after")
-    def require_database_safety_details(self) -> "ActionRequest":
-        if self.kind is ActionKind.DATABASE_CHANGE and not (
-            self.forward_plan
-            and self.compatibility_analysis
-            and self.recovery != "Use a forward fix or an approved revert"
-        ):
-            raise ValueError(
-                "database change requires forward plan, compatibility analysis and recovery"
-            )
-        return self
 
 
 class GateDecision(StrictModel):
@@ -83,10 +35,6 @@ class GatePolicy:
         self.contract = contract
         self.authorization = authorization
 
-    @property
-    def _uses_autonomous_risk_grant(self) -> bool:
-        return self.contract.protocol_version in {"0.2.0", "0.3.0"}
-
     def _pause(
         self,
         reason: str,
@@ -100,12 +48,7 @@ class GatePolicy:
         )
 
     def _scope_pause(self, reason: str) -> GateDecision:
-        required_gate = (
-            GateRequirement.CONTRACT_REVISION
-            if self._uses_autonomous_risk_grant
-            else GateRequirement.DANGEROUS_ACTION
-        )
-        return self._pause(reason, required_gate)
+        return self._pause(reason, GateRequirement.CONTRACT_REVISION)
 
     def _authorization_matches_contract(self) -> bool:
         if self.authorization is None:
@@ -113,7 +56,6 @@ class GatePolicy:
         expected_risk_ids = sorted(
             operation.risk_id
             for operation in self.contract.authorized_operations
-            if operation.risk_id is not None
         )
         return (
             self.authorization.protocol_version == self.contract.protocol_version
@@ -131,6 +73,29 @@ class GatePolicy:
             and risk_id in self.authorization.accepted_risk_ids
         )
 
+    def _is_planned(self, request: ActionRequest) -> bool:
+        plan = self.contract.execution_plan
+        file_kinds = {
+            ActionKind.FILE_WRITE,
+            ActionKind.BATCH_WRITE,
+            ActionKind.FILE_DELETE,
+            ActionKind.BATCH_MOVE,
+        }
+        for planned in plan.actions:
+            if (
+                planned.kind is not request.kind
+                or planned.repository_id != request.repository_id
+            ):
+                continue
+            if planned.target == request.target:
+                return True
+            if request.kind in file_kinds and is_allowed_path(
+                request.target,
+                [planned.target],
+            ):
+                return True
+        return False
+
     def evaluate(self, request: ActionRequest) -> GateDecision:
         if request.kind in {
             ActionKind.FORCE_PUSH,
@@ -142,19 +107,20 @@ class GatePolicy:
                 outcome=GateOutcome.DENY,
                 reason="operation is forbidden",
             )
-        if (
-            self._uses_autonomous_risk_grant
-            and not self._authorization_matches_contract()
-        ):
+        if not self._authorization_matches_contract():
             return self._pause(
                 "current contract approval is missing or stale",
                 GateRequirement.CONTRACT_APPROVAL,
+            )
+        if not self._is_planned(request):
+            return self._scope_pause(
+                "operation is outside the approved execution plan"
             )
         exact = next(
             (
                 operation
                 for operation in self.contract.authorized_operations
-                if operation.kind == request.kind.value
+                if operation.kind is request.kind
                 and operation.repository_id == request.repository_id
                 and operation.target == request.target
             ),
@@ -176,10 +142,7 @@ class GatePolicy:
             )
             target_allowed = bool(
                 repository
-                and (
-                    is_allowed_path(request.target, repository.allowed_paths)
-                    or (exact is not None and is_allowed_path(request.target, ["."]))
-                )
+                and is_allowed_path(request.target, repository.allowed_paths)
             )
             if not target_allowed:
                 return self._scope_pause(
@@ -195,6 +158,14 @@ class GatePolicy:
             None,
         )
         git_flags = {
+            ActionKind.GIT_WORKTREE: bool(
+                git_target
+                and git_target.create_worktree
+                and git_target.branch
+                and git_target.worktree_path
+                and request.target
+                == f"{git_target.branch}@{git_target.worktree_path.resolve()}"
+            ),
             ActionKind.GIT_COMMIT: bool(
                 git_target and git_target.commit and request.target == git_target.branch
             ),
@@ -213,16 +184,15 @@ class GatePolicy:
             allowed = git_flags[request.kind]
             if not allowed:
                 return self._scope_pause("Git action is not preauthorized")
-            if self._uses_autonomous_risk_grant:
-                if exact is None:
-                    return self._scope_pause(
-                        "Git action lacks a disclosed exact risk grant"
-                    )
-                if not self._risk_is_accepted(exact.risk_id):
-                    return self._pause(
-                        "current contract risk acceptance is missing or stale",
-                        GateRequirement.CONTRACT_APPROVAL,
-                    )
+            if exact is None:
+                return self._scope_pause(
+                    "Git action lacks a disclosed exact risk grant"
+                )
+            if not self._risk_is_accepted(exact.risk_id):
+                return self._pause(
+                    "current contract risk acceptance is missing or stale",
+                    GateRequirement.CONTRACT_APPROVAL,
+                )
             return GateDecision(
                 outcome=GateOutcome.ALLOW,
                 reason="Git action matches approved contract and risk grant",
@@ -232,11 +202,6 @@ class GatePolicy:
             ActionKind.PRODUCTION_ACCESS,
             ActionKind.SENSITIVE_DATA,
         }:
-            if not self._uses_autonomous_risk_grant:
-                return self._pause(
-                    "operation requires a fresh human gate",
-                    GateRequirement.DANGEROUS_ACTION,
-                )
             if exact is None:
                 return self._scope_pause(
                     "operation is outside the approved risk grant"
@@ -270,9 +235,7 @@ class GatePolicy:
                 return self._scope_pause(
                     f"contract permission {permission_field} is false"
                 )
-            if self._uses_autonomous_risk_grant and not self._risk_is_accepted(
-                exact.risk_id
-            ):
+            if not self._risk_is_accepted(exact.risk_id):
                 return self._pause(
                     "current contract risk acceptance is missing or stale",
                     GateRequirement.CONTRACT_APPROVAL,
@@ -302,23 +265,3 @@ class GatePolicy:
             outcome=GateOutcome.ALLOW,
             reason="low-risk scoped action",
         )
-
-
-def render_confirmation(request: ActionRequest, decision: GateDecision) -> str:
-    database_details = ""
-    if request.kind is ActionKind.DATABASE_CHANGE:
-        database_details = (
-            f"前向方案：{request.forward_plan}\n"
-            f"兼容性分析：{request.compatibility_analysis}\n"
-        )
-    return (
-        "⚠️ 危险操作检测！\n"
-        f"操作类型：{request.kind.value}\n"
-        f"精确目标：{request.target}\n"
-        f"影响范围：{request.impact}\n"
-        f"风险评估：{request.risk}\n"
-        f"恢复方案：{request.recovery}\n"
-        f"{database_details}"
-        f"当前证据：{request.evidence}；策略判定：{decision.reason}\n\n"
-        "请确认是否继续？[需要明确的“是”“确认”“继续”]"
-    )

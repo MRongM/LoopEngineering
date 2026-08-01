@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import Field
 
-from loop_engineering.models.contract import StrictModel
+from loop_engineering.models.base import StrictModel
 from loop_engineering.models.run import CheckerVerdict
 
 
@@ -22,13 +22,16 @@ class EvidenceRecord(StrictModel):
     stderr_file: str
     stdout_sha256: str
     stderr_sha256: str
+    workspace_clean: bool = True
+    workspace_changes: list[str] = Field(default_factory=list)
+    error_type: str | None = None
+    timed_out: bool = False
 
 
 class CompletionContext(StrictModel):
     evidence: list[EvidenceRecord]
     current_fingerprints: dict[str, str]
     checker_verdict: CheckerVerdict | None
-    human_accepted: bool
     git_delivered: dict[str, bool]
     scope_valid: bool
     gates_clear: bool

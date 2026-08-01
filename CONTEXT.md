@@ -25,5 +25,5 @@ Codex 宿主根据以 `$loop-engine goal-bridge/v1` 开头的 Goal objective 继
 _Avoid_：可选 Goal、接管无关 Goal、Goal 作为合同批准
 
 **控制模式（Control Mode）**：
-Core 与 Adapter 唯一支持的执行方式是 `autonomous`。0.3 新合同省略 `mode` 时仍解析为该值；任何显式不兼容模式都拒绝，不提供选择、降级或迁移路径。控制模式不决定 Skill 是否激活。
+Core 与 Adapter 唯一支持的执行方式是 `autonomous`。首版合同省略 `mode` 时仍解析为该值；任何显式不兼容模式都拒绝，不提供选择、降级或迁移路径。控制模式不决定 Skill 是否激活。
 _Avoid_：模式选择、触发模式、激活模式、静默迁移

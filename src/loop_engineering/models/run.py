@@ -3,9 +3,9 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
-from loop_engineering.models.contract import StrictModel
+from loop_engineering.models.base import StrictModel
 
 
 class LoopStatus(StrEnum):
@@ -43,10 +43,24 @@ class LoopState(StrictModel):
     started_at: datetime
     updated_at: datetime
     pause_reason: str | None = None
+    paused_at: datetime | None = None
+    paused_seconds: float = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def require_consistent_pause_clock(self) -> "LoopState":
+        is_nonexecuting = self.status in {
+            LoopStatus.AWAITING_APPROVAL,
+            LoopStatus.PAUSED,
+        }
+        if is_nonexecuting and self.paused_at is None:
+            raise ValueError("paused_at is required for a nonexecuting state")
+        if not is_nonexecuting and self.paused_at is not None:
+            raise ValueError("paused_at is forbidden for an active or terminal state")
+        return self
 
 
 class ContractAuthorization(StrictModel):
-    protocol_version: Literal["0.2.0", "0.3.0"]
+    protocol_version: Literal["0.1.0"]
     contract_version: int = Field(ge=1)
     contract_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     accepted_risk_ids: list[str]

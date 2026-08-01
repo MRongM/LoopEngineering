@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from pydantic import ValidationError
 
 from loop_engineering.models.contract import LoopContract
 from loop_engineering.models.run import LoopState, LoopStatus
@@ -21,6 +22,9 @@ def state(status: LoopStatus = LoopStatus.INTAKE) -> LoopState:
         status=status,
         started_at=now,
         updated_at=now,
+        paused_at=now
+        if status in {LoopStatus.AWAITING_APPROVAL, LoopStatus.PAUSED}
+        else None,
     )
 
 
@@ -105,3 +109,63 @@ def test_paused_run_can_enter_contract_revision_flow() -> None:
     current = transition(current, LoopStatus.AWAITING_APPROVAL, "present revision")
 
     assert current.status is LoopStatus.AWAITING_APPROVAL
+
+
+def test_awaiting_approval_and_paused_time_do_not_consume_execution_budget() -> None:
+    contract = LoopContract.model_validate(valid_contract_data())
+    started = state(LoopStatus.CONTRACT_DRAFTING)
+    awaiting = transition(
+        started,
+        LoopStatus.AWAITING_APPROVAL,
+        "present contract",
+        now=started.started_at + timedelta(minutes=1),
+    )
+
+    while_waiting = budget_status(
+        contract,
+        awaiting,
+        now=started.started_at + timedelta(hours=2),
+    )
+    resumed = transition(
+        awaiting,
+        LoopStatus.PLANNING,
+        "contract approved",
+        now=started.started_at + timedelta(hours=2),
+    )
+    after_active_work = budget_status(
+        contract,
+        resumed,
+        now=started.started_at + timedelta(hours=2, minutes=28),
+    )
+
+    assert while_waiting.condition is BudgetCondition.AVAILABLE
+    assert resumed.paused_seconds == pytest.approx(119 * 60)
+    assert resumed.paused_at is None
+    assert after_active_work.condition is BudgetCondition.AVAILABLE
+
+
+def test_persisted_state_cannot_freeze_an_executing_time_budget() -> None:
+    now = datetime(2026, 7, 30, tzinfo=UTC)
+
+    with pytest.raises(ValidationError, match="paused_at"):
+        LoopState(
+            loop_id="loop-example-001",
+            contract_version=1,
+            status=LoopStatus.EXECUTING,
+            started_at=now,
+            updated_at=now,
+            paused_at=now,
+        )
+
+
+def test_persisted_nonexecuting_state_requires_a_pause_timestamp() -> None:
+    now = datetime(2026, 7, 30, tzinfo=UTC)
+
+    with pytest.raises(ValidationError, match="paused_at"):
+        LoopState(
+            loop_id="loop-example-001",
+            contract_version=1,
+            status=LoopStatus.PAUSED,
+            started_at=now,
+            updated_at=now,
+        )

@@ -4,8 +4,11 @@ from pathlib import Path
 
 import pytest
 
+from loop_engineering.cli import main
 from loop_engineering.git_automation import GitAutomation, GitSafetyError
+from loop_engineering.ledger import RunStore
 from loop_engineering.models.contract import LoopContract
+from loop_engineering.models.run import EventKind, LoopStatus
 from tests.factories import valid_contract_data
 
 
@@ -21,7 +24,12 @@ def run(*argv: str, cwd: Path | None = None) -> str:
     return result.stdout.strip()
 
 
-def git_contract(repo: Path, worktree: Path) -> LoopContract:
+def git_contract(
+    repo: Path,
+    worktree: Path,
+    *,
+    plan_worktree: bool = False,
+) -> LoopContract:
     data = valid_contract_data()
     data["repositories"][0].update(
         {"path": str(repo), "allowed_paths": ["src/", "tests/"]}
@@ -38,7 +46,50 @@ def git_contract(repo: Path, worktree: Path) -> LoopContract:
             "worktree_path": str(worktree),
         }
     )
+    if plan_worktree:
+        target = f"feat/loop-test@{worktree.resolve()}"
+        data["authorized_operations"] = [
+            {
+                "risk_id": "RISK-1",
+                "kind": "git_worktree",
+                "repository_id": "target",
+                "target": target,
+                "risk_level": "low",
+                "impact": "Creates the approved isolated Git worktree",
+                "worst_case": "The worktree path may need manual cleanup",
+                "recovery": "Remove the worktree through a separately approved action",
+                "evidence": "The execution plan requires isolated implementation",
+            }
+        ]
+        data["execution_plan"]["actions"].append(
+            {
+                "kind": "git_worktree",
+                "repository_id": "target",
+                "target": target,
+                "impact": "Creates the approved isolated Git worktree",
+                "risk": "A new branch and worktree are created",
+                "recovery": "Remove them through a separately approved action",
+                "evidence": "Git state proves the exact branch and worktree",
+            }
+        )
     return LoopContract.model_validate(data)
+
+
+def approve_for_execution(store: RunStore) -> None:
+    for target in (
+        LoopStatus.DISCOVERING,
+        LoopStatus.CONTRACT_DRAFTING,
+        LoopStatus.AWAITING_APPROVAL,
+    ):
+        store.record_transition(actor="maker", target=target, reason=target.value)
+    store.record_approval(
+        actor="user",
+        gate="contract_approval",
+        approved=True,
+        summary="approved exact Git plan",
+    )
+    for target in (LoopStatus.PLANNING, LoopStatus.EXECUTING):
+        store.record_transition(actor="maker", target=target, reason=target.value)
 
 
 def repositories(tmp_path: Path) -> tuple[Path, Path]:
@@ -80,6 +131,70 @@ def test_worktree_commit_and_push_use_exact_contract_targets(tmp_path: Path) -> 
         )
         == commit
     )
+
+
+def test_cli_git_prepare_rejects_missing_contract_authorization(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source, _ = repositories(tmp_path)
+    worktree = tmp_path / "worktree"
+    store = RunStore.create(source, git_contract(source, worktree))
+
+    assert main(["git", "prepare", str(store.run_dir), "target"]) == 2
+    assert not worktree.exists()
+    assert "contract approval" in capsys.readouterr().err
+
+
+def test_cli_git_prepare_uses_exact_plan_and_records_intent_result(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source, _ = repositories(tmp_path)
+    worktree = tmp_path / "worktree"
+    store = RunStore.create(
+        source,
+        git_contract(source, worktree, plan_worktree=True),
+    )
+    approve_for_execution(store)
+
+    assert main(["git", "prepare", str(store.run_dir), "target"]) == 0
+    assert worktree.is_dir()
+    events = store.events()
+    assert [event.kind for event in events[-2:]] == [EventKind.INTENT, EventKind.RESULT]
+    assert events[-1].payload["git"] == {
+        "operation": "prepare",
+        "repository_id": "target",
+        "success": True,
+        "worktree": str(worktree.resolve()),
+    }
+    assert capsys.readouterr().err == ""
+
+
+def test_cli_git_failure_closes_its_intent(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source, _ = repositories(tmp_path)
+    worktree = tmp_path / "worktree"
+    store = RunStore.create(
+        source,
+        git_contract(source, worktree, plan_worktree=True),
+    )
+    approve_for_execution(store)
+    worktree.mkdir()
+
+    assert main(["git", "prepare", str(store.run_dir), "target"]) == 2
+    assert store.pending_intents() == []
+    result = store.events()[-1]
+    assert result.kind is EventKind.RESULT
+    assert result.payload["git"] == {
+        "error_type": "GitSafetyError",
+        "operation": "prepare",
+        "repository_id": "target",
+        "success": False,
+    }
+    assert "worktree target already exists" in capsys.readouterr().err
 
 
 def test_unknown_repository_id_is_not_authorized(tmp_path: Path) -> None:

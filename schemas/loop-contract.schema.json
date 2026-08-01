@@ -30,52 +30,128 @@
       "title": "AcceptanceCriterion",
       "type": "object"
     },
+    "ActionKind": {
+      "enum": [
+        "file_write",
+        "batch_write",
+        "file_delete",
+        "batch_move",
+        "dependency_change",
+        "global_package",
+        "database_change",
+        "system_config",
+        "permission_change",
+        "network",
+        "sensitive_data",
+        "production_access",
+        "platform_state",
+        "git_worktree",
+        "git_commit",
+        "git_push",
+        "create_pr",
+        "force_push",
+        "history_rewrite",
+        "merge",
+        "deploy"
+      ],
+      "title": "ActionKind",
+      "type": "string"
+    },
+    "ActionRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "compatibility_analysis": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Compatibility Analysis"
+        },
+        "evidence": {
+          "default": "The approved Loop Contract requires this action",
+          "title": "Evidence",
+          "type": "string"
+        },
+        "forward_plan": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Forward Plan"
+        },
+        "impact": {
+          "default": "External state will change",
+          "title": "Impact",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ActionKind"
+        },
+        "recovery": {
+          "default": "Use a forward fix or an approved revert",
+          "title": "Recovery",
+          "type": "string"
+        },
+        "repository_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repository Id"
+        },
+        "risk": {
+          "default": "The change may be difficult to recover",
+          "title": "Risk",
+          "type": "string"
+        },
+        "target": {
+          "minLength": 1,
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "target"
+      ],
+      "title": "ActionRequest",
+      "type": "object"
+    },
     "AuthorizedOperation": {
       "additionalProperties": false,
       "properties": {
         "evidence": {
-          "anyOf": [
-            {
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Evidence"
-        },
-        "impact": {
-          "anyOf": [
-            {
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Impact"
-        },
-        "kind": {
           "minLength": 1,
-          "title": "Kind",
+          "title": "Evidence",
           "type": "string"
         },
+        "impact": {
+          "minLength": 1,
+          "title": "Impact",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ActionKind"
+        },
         "recovery": {
-          "anyOf": [
-            {
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Recovery"
+          "minLength": 1,
+          "title": "Recovery",
+          "type": "string"
         },
         "repository_id": {
           "anyOf": [
@@ -90,28 +166,12 @@
           "title": "Repository Id"
         },
         "risk_id": {
-          "anyOf": [
-            {
-              "pattern": "^RISK-[1-9][0-9]*$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Risk Id"
+          "pattern": "^RISK-[1-9][0-9]*$",
+          "title": "Risk Id",
+          "type": "string"
         },
         "risk_level": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RiskLevel"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+          "$ref": "#/$defs/RiskLevel"
         },
         "target": {
           "minLength": 1,
@@ -119,22 +179,20 @@
           "type": "string"
         },
         "worst_case": {
-          "anyOf": [
-            {
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Worst Case"
+          "minLength": 1,
+          "title": "Worst Case",
+          "type": "string"
         }
       },
       "required": [
+        "risk_id",
         "kind",
-        "target"
+        "target",
+        "risk_level",
+        "impact",
+        "worst_case",
+        "recovery",
+        "evidence"
       ],
       "title": "AuthorizedOperation",
       "type": "object"
@@ -181,6 +239,33 @@
       ],
       "title": "ControlMode",
       "type": "string"
+    },
+    "ExecutionPlan": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/ActionRequest"
+          },
+          "minItems": 1,
+          "title": "Actions",
+          "type": "array"
+        },
+        "design_decisions": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Design Decisions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "design_decisions",
+        "actions"
+      ],
+      "title": "ExecutionPlan",
+      "type": "object"
     },
     "GitPolicy": {
       "additionalProperties": false,
@@ -435,6 +520,11 @@
           "minimum": 1,
           "title": "Timeout Seconds",
           "type": "integer"
+        },
+        "workspace_policy": {
+          "const": "isolated",
+          "title": "Workspace Policy",
+          "type": "string"
         }
       },
       "required": [
@@ -442,35 +532,14 @@
         "repository_id",
         "cwd",
         "argv",
-        "criterion_ids"
+        "criterion_ids",
+        "workspace_policy"
       ],
       "title": "ValidationCommand",
       "type": "object"
     }
   },
   "additionalProperties": false,
-  "allOf": [
-    {
-      "if": {
-        "properties": {
-          "protocol_version": {
-            "enum": [
-              "0.1.0",
-              "0.2.0"
-            ]
-          }
-        },
-        "required": [
-          "protocol_version"
-        ]
-      },
-      "then": {
-        "required": [
-          "mode"
-        ]
-      }
-    }
-  ],
   "properties": {
     "acceptance_criteria": {
       "items": {
@@ -502,18 +571,15 @@
       "title": "Contract Version",
       "type": "integer"
     },
+    "execution_plan": {
+      "$ref": "#/$defs/ExecutionPlan"
+    },
     "git_policy": {
       "$ref": "#/$defs/GitPolicy"
     },
     "human_gates": {
       "items": {
-        "enum": [
-          "contract_approval",
-          "design_approval",
-          "plan_approval",
-          "dangerous_action",
-          "final_acceptance"
-        ],
+        "const": "contract_approval",
         "type": "string"
       },
       "minItems": 1,
@@ -566,12 +632,8 @@
       "$ref": "#/$defs/PermissionPolicy"
     },
     "protocol_version": {
-      "default": "0.3.0",
-      "enum": [
-        "0.1.0",
-        "0.2.0",
-        "0.3.0"
-      ],
+      "const": "0.1.0",
+      "default": "0.1.0",
       "title": "Protocol Version",
       "type": "string"
     },
@@ -620,6 +682,7 @@
     "validation_commands",
     "risk_level",
     "permissions",
+    "execution_plan",
     "git_policy",
     "budget",
     "human_gates",

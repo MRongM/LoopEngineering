@@ -8,16 +8,15 @@ from collections.abc import Sequence
 from pathlib import Path
 
 DISTRIBUTION_NAME = "loop-engineering"
-SKILL_CHECKOUT_NAME = "loop-engineering"
+SKILL_CHECKOUT_NAME = "loop-engine"
 CODEX_SKILL_NAME = "loop-engine"
 CLI_NAME = "loop-engine"
-LEGACY_CLI_NAMES = ("loop-engineering", "loop-agent")
-PACKAGE_VERSION = "0.3.0"
+PACKAGE_VERSION = "0.1.0"
 CODEX_INVOCATION_POLICY = "policy:\n  allow_implicit_invocation: true\n"
 OFFICIAL_REPOSITORY = "https://github.com/MRongM/LoopEngineering.git"
 MANAGED_BRANCH = "master"
-PROTOCOL_HEADER = "# Loop Engineering Core Protocol 0.3.0"
-CORE_COMPATIBILITY = "Compatible Core: >=0.3,<0.4"
+PROTOCOL_HEADER = "# Loop Engineering Core Protocol 0.1.0"
+CORE_PROTOCOL_MARKER = "Core Protocol: 0.1.0"
 INSTALL_TIMEOUT_SECONDS = 600
 ERROR = 2
 CONFIRMATION_REQUIRED = 3
@@ -104,7 +103,7 @@ def _validate_checkout(codex_home: Path) -> Path:
     skill_frontmatter = frontmatter_parts[1].splitlines()
     if (
         f"name: {CODEX_SKILL_NAME}" not in skill_frontmatter
-        or CORE_COMPATIBILITY not in frontmatter_parts[2]
+        or CORE_PROTOCOL_MARKER not in frontmatter_parts[2]
     ):
         raise LifecycleError("Skill checkout adapter marker does not match")
     if invocation_policy_text != CODEX_INVOCATION_POLICY:
@@ -153,19 +152,11 @@ def _verify_installed_cli() -> None:
         raise LifecycleError(
             f"installed {CLI_NAME} executable does not report {PACKAGE_VERSION}"
         )
-    legacy = [name for name in LEGACY_CLI_NAMES if shutil.which(name) is not None]
-    if legacy:
-        raise LifecycleError(f"legacy CLI alias remains discoverable: {legacy[0]}")
 
 
 def _verify_uninstalled_cli() -> None:
-    remaining = [
-        name
-        for name in (CLI_NAME, *LEGACY_CLI_NAMES)
-        if shutil.which(name) is not None
-    ]
-    if remaining:
-        raise LifecycleError(f"CLI executable remains discoverable: {remaining[0]}")
+    if shutil.which(CLI_NAME) is not None:
+        raise LifecycleError(f"CLI executable remains discoverable: {CLI_NAME}")
 
 
 def _install(repository: Path, *, reinstall: bool = False) -> None:

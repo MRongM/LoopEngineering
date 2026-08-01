@@ -1,139 +1,173 @@
-# Loop Engineering Core Protocol 0.3.0
+# Loop Engineering Core Protocol 0.1.0
 
-## Normative terms
+## Purpose
 
-MUST, MUST NOT, SHOULD and MAY are requirement levels. A conforming adapter MUST
-enforce every MUST/MUST NOT rule and MUST reject incompatible protocol versions.
+Loop Engineering is an evidence-gated, recoverable execution protocol for coding agents.
+An Agent may operate autonomously only inside one explicitly approved, verifiable contract
+and may reach `DONE` only when fresh evidence satisfies that contract.
 
-## Admission
+Protocol `0.1.0` is the first release. Core accepts exactly this protocol version; it has no
+older-version parser, compatibility branch, downgrade path or automatic migration.
 
-- Read-only questions MAY use investigate-verify-report without a run.
-- Every state-changing task MUST create a Loop Contract.
-- Mode MUST be autonomous and MUST NOT be inherited. A 0.3.0 contract that omits
-  mode defaults to autonomous. A 0.1.0/0.2.0 contract MUST explicitly declare
-  autonomous; collaborative and ambiguous legacy contracts MUST be rejected.
-- Autonomous execution MUST NOT start before explicit contract approval.
-- Autonomous 0.2.0/0.3.0 contract approval MUST include acceptance of every
-  disclosed risk.
-- Every Autonomous 0.2.0/0.3.0 action MUST be checked against the matching bound
-  approval.
+## Core invariants
 
-## Contract
+- The only control mode is `autonomous`.
+- A state-changing task MUST begin with a complete, execution-closed Loop Contract.
+- The user MUST approve that complete contract once before execution.
+- Approval MUST bind the protocol version, contract version, canonical contract SHA-256 and
+  the complete set of accepted risk IDs.
+- Every runtime action MUST match both the approved execution plan and the contract policy.
+- A new action, target, permission, risk, budget or delivery target MUST produce
+  `contract_revision`; it MUST NOT create an isolated confirmation prompt.
+- Force-push, history rewrite, reset-hard behavior, automatic merge and deployment are
+  permanently denied.
+- Every external state change MUST have a persisted intent before execution and a matching
+  observed result afterward.
+- Evidence MUST be fresh, command-backed, bound to the current contract and source
+  fingerprint, and collected with argv subprocesses using `shell=False`.
+- The Agent MUST NOT claim `DONE` from prose, confidence or stale output.
 
-The contract MUST identify objective, repositories, allowed paths, scope,
-acceptance criteria, evidence commands, risk, permissions, Git policy, budgets,
-human gates, assumptions and stop conditions. Objective, scope, acceptance,
-dangerous permissions, repository targets, Git targets or budget expansion MUST
-create a new contract version and pause execution.
+## Project control root
 
-Every 0.2.0/0.3.0 authorized operation MUST have a unique risk ID, exact kind and
-target, risk level, impact, worst case, recovery and evidence. Production and
-sensitive-data operations MUST be high risk and MUST have their corresponding
-category permission. High-risk Autonomous contracts MUST contain at least one
-high-risk disclosure. Every planned dangerous, production, sensitive-data and Git
-mutation MUST be disclosed before approval; ordinary scoped actions remain bounded
-by repositories and paths.
+Each target project has exactly one Loop-owned top-level directory:
 
-Rule priority is: platform safety and the latest explicit user instruction; the
-approved Loop Contract; applicable `AGENTS.md`; repository architecture/testing
-rules; then Core defaults. A new higher-priority instruction that conflicts with
-the contract MUST pause execution and revise the contract before mutation.
+```text
+.loop-engine/
+├── .gitignore
+├── project.yaml
+├── drafts/
+├── runs/
+└── cache/
+```
 
-## Loop
+Only `.loop-engine/project.yaml` and `.loop-engine/.gitignore` are trackable. Drafts, run
+ledgers, evidence and cache data are local runtime state. Core MUST ignore `.loop-engine/`
+when calculating source fingerprints and scope. Project initialization MUST fail closed when
+another Loop-owned top-level directory conflicts; it MUST NOT move or delete data.
+Control directories and files MUST NOT be symlinks or junctions.
 
-The legal lifecycle is intake -> discovering -> contract_drafting ->
-awaiting_approval -> designing/planning -> executing -> verifying -> checking ->
-deciding. Deciding MAY return to planning/executing or enter paused, done,
-blocked or budget_exhausted. Done, blocked and budget_exhausted are immutable;
-continuation creates a child run.
+## Loop Contract
 
-Each execution iteration MUST select one unmet criterion, record an intent,
-perform the smallest scoped action, observe real feedback, record the result,
-capture evidence, invoke Checker when required, and decide the next state.
+A contract MUST include:
 
-## Evidence and verification
+- loop identity and monotonically increasing `contract_version`;
+- `protocol_version: 0.1.0` and `mode: autonomous`;
+- objective, repositories, exact allowed paths, scope and exclusions;
+- acceptance criteria and their required validation evidence;
+- isolated validation commands, argv, working directory and timeout;
+- permissions, overall risk level and complete authorized-operation disclosures;
+- an execution plan containing key `design_decisions` and exact `actions`;
+- exact Git delivery policy;
+- iteration, active-time and Checker-revision budgets;
+- exactly one human gate, `contract_approval`;
+- assumptions and all terminal stop conditions.
 
-- Every acceptance criterion MUST have fresh evidence for the current fingerprint.
-- Bug fixes SHOULD preserve before-fail and after-pass evidence.
-- Validation MUST use argv execution with shell disabled.
-- Tests MUST NOT be removed, weakened, skipped or hidden to claim success.
-- Medium/high risk MUST receive independent Checker ACCEPT.
-- Autonomous 0.2.0/0.3.0 MUST NOT add final human acceptance solely because risk
-  is high; an explicitly declared final gate still applies.
-- Legacy 0.1.0 high-risk Autonomous runs MUST retain their final human gate.
+Unknown fields MUST be rejected. References, repository dependencies and Git targets MUST
+be internally consistent. Paths and refs MUST be resolved and non-option-like. Inline secret
+arguments MUST be rejected.
 
-## Failure, recovery and budgets
+Every authorized operation MUST disclose a unique `risk_id`, exact kind, repository, target,
+risk level, impact, worst case, recovery and evidence. Production and sensitive-data actions
+MUST be high risk. Permissions MUST explicitly enable every disclosed privileged category.
 
-- The same failed strategy MAY be retried at most once.
-- Two consecutive iterations without new evidence or material progress MUST return
-  to diagnosis before another state-changing attempt.
-- Interrupted intents MUST be reconciled against worktrees, refs, remotes and
-  external state before retrying.
-- Iteration, time and Checker-revision limits are contract data and MUST be enforced.
-- A contract contradiction pauses; missing external authority/state blocks; only a
-  reached contract or global limit becomes budget_exhausted.
+## Execution closure
 
-## Persistence
+Before admission, Core MUST evaluate each `execution_plan.actions` entry against a synthetic
+authorization for the complete contract. Every entry MUST return `allow`. A plan that would
+pause or deny after approval is not execution-closed and MUST be rejected.
 
-Each run MUST persist its approved contract, atomic state snapshot, append-only
-JSONL events, evidence files and final report under `.loop-runs/<loop_id>/`.
-Events MUST include monotonic intent/result pairs, transitions, approvals, Checker
-verdicts and external side-effect identifiers. Runtime data MUST be ignored by Git
-by default and MUST NOT contain secrets or full model reasoning.
+Runtime allowed paths are boundaries, not implied authorization. Every actual action MUST be
+represented by the approved plan. A material design or plan change is one complete contract
+revision followed by a new bound approval.
 
-An approved 0.2.0/0.3.0 `contract_approval` or `contract_revision` event MUST bind
-the current `protocol_version`, `contract_version`, canonical `contract_sha256` and
-complete `accepted_risk_ids`. A stale, incomplete or mismatched binding grants no
-authority.
+## Approval and authorization
 
-## Safety
+The adapter presents one `Ready-to-execute Loop Contract` summary containing the design,
+minimal action plan, validation, risks, permissions, Git targets, budget and stop conditions.
+One unambiguous approval records `contract_approval` with:
 
-- The adapter MUST resolve and boundary-check every path.
-- Secrets, tokens, sensitive responses and full model reasoning MUST NOT be persisted.
-- Unmatched intent events MUST be reconciled against real external state before retry.
-- Force-push, history rewriting, reset --hard, automatic merge and automatic deployment are forbidden.
-- Production and sensitive-data operations in Autonomous 0.2.0/0.3.0 MAY proceed
-  without another human gate only when their exact risk is present in the current
-  contract, the category permission is true, and the run ledger contains the matching
-  bound approval. Legacy 0.1.0 runs require a fresh human gate.
-- A new operation, target, permission or risk in Autonomous 0.2.0/0.3.0 MUST pause
-  for one complete `contract_revision`; it MUST NOT be approved as an isolated
-  danger prompt.
-- Database changes require a forward plan, compatibility analysis and recovery strategy.
-- Unresolved variables, broad globs and workspace-root destructive targets are forbidden.
-- User changes of unknown origin MUST NOT be overwritten, reverted or deleted.
-- Every approval, rejection and permission change MUST be appended to the run ledger.
+- `protocol_version`;
+- `contract_version`;
+- `contract_sha256`;
+- sorted `accepted_risk_ids`.
 
-## Git and cross-repository delivery
+Any contract mutation invalidates the binding. A replacement contract MUST keep the loop ID,
+increment `contract_version` by exactly one, return to `AWAITING_APPROVAL`, and record one
+fresh `contract_revision` approval. After valid approval, ordinary planned work continues
+without routine human confirmations. Non-blocking questions are accumulated for the final
+report.
 
-Git automation MUST re-check the exact repository, worktree, base branch, target
-branch, remote and allowed paths immediately before mutation. It MUST stage only
-explicit approved paths and MUST preserve unrelated dirty user work. Multi-repository
-runs MUST follow the acyclic contract dependency order, use one branch and PR per
-repository, and disclose prerequisite PRs. DONE means ready for human merge, never
-merged or deployed.
+## State machine and budgets
 
-## Engineering quality
+The ordinary lifecycle is:
 
-- Read existing code, tests and local instructions before writing.
-- Apply KISS and YAGNI; implement only the smallest accepted behavior.
-- Apply DRY only to material repetition in scope; do not speculate with abstractions.
-- Preserve SOLID responsibility, dependency and interface boundaries.
-- Do not perform unrelated refactors, bulk formatting or dependency upgrades.
-- Match the repository's comment language and explain reasons or constraints.
-- A new dependency requires necessity, alternatives and authorization evidence.
+```text
+intake -> discovering -> contract_drafting -> awaiting_approval
+       -> designing -> planning -> executing -> verifying
+       -> checking -> deciding
+```
 
-## Termination
+Terminal states are `done`, `blocked` and `budget_exhausted`; `paused` is recoverable.
+Illegal transitions MUST be rejected. Leaving `awaiting_approval` requires a current bound
+authorization.
 
-DONE means all criteria have fresh evidence, required Checker/human gates passed,
-the diff remains in scope, and approved Git/PR delivery completed. BLOCKED is only
-for missing authority, input or external state. BUDGET_EXHAUSTED is only for a
-contract or global limit. Difficulty alone is not a terminal reason.
+The elapsed-time budget counts active execution time only. Time spent awaiting approval or
+paused MUST NOT consume it. The sum of one pass through all validation timeouts MUST fit
+inside the active-time budget. Iterations, Checker revisions and same-strategy retry limits
+are independently enforced.
 
-## Compatibility
+## Intent/result ledger
 
-Core 0.3.0 MAY load 0.1.0/0.2.0 contracts only when they explicitly declare
-autonomous, and MUST preserve their original version-specific gate semantics. New
-templates and adapters MUST create 0.3.0 contracts. An active legacy run MUST NOT be
-silently upgraded; migration requires a new 0.3.0 contract version and explicit
-approval of its complete risk disclosure. Protocol downgrades MUST be rejected.
+`events.jsonl` is append-only and monotonically sequenced. An Agent records an `intent`
+immediately before an external mutation and a matching `result` immediately after observing
+real state. A crash between them leaves a pending intent that MUST be reconciled before any
+retry. Secrets and complete model reasoning MUST NOT be persisted.
+
+Contract replacement invalidates evidence from prior contract versions. Cleanup or a source
+revision invalidates fingerprints. Ledger corruption and partial tails MUST fail closed.
+
+## Validation evidence
+
+Every validation command MUST use `workspace_policy: isolated`. Core copies the current Git
+tracked and non-ignored working snapshot into a disposable repository under
+`.loop-engine/cache/`, then runs the exact argv with `shell=False` and a bounded timeout.
+Generic temporary and cache environment variables MUST also point inside `.loop-engine/cache/`.
+
+The source repository fingerprint is captured before and after validation. A validator start
+failure, timeout, non-zero exit, source mutation or unavailable workspace state MUST create a
+closed failed result, never an unmatched intent. Evidence records include timestamps, exit
+status, redacted stdout/stderr hashes, source fingerprint and workspace-integrity facts.
+
+## Gate policy
+
+Gate evaluation order is:
+
+1. permanently forbidden actions return `deny`;
+2. missing or stale contract binding returns `contract_approval`;
+3. an action outside the execution plan returns `contract_revision`;
+4. scope, permission, Git-target and exact-risk checks run;
+5. a fully matching action returns `allow`.
+
+Production, sensitive-data, database, dependency, network, platform-state and Git mutations
+may run only when the exact planned request and any required risk disclosure match the
+current bound contract. A direct contract file is never proof of approval; authorization is
+derived from the run ledger.
+
+The Agent Shell Git commands MUST enforce the bound Gate decision themselves, require the
+`executing` state, and automatically record a matching intent/result pair. A failed Git
+operation MUST close its intent with an observed failed result.
+
+## DONE predicate
+
+`DONE` requires all of the following current facts:
+
+- every acceptance criterion has passing evidence from its required command;
+- evidence contract version, repository, criterion and fingerprint match;
+- medium/high risk has Checker `ACCEPT`;
+- required Git delivery has observed successful results;
+- actual diff is inside approved scope;
+- no pending intent or unresolved gate remains;
+- current contract authorization is valid.
+
+The authoritative completion command MUST reconstruct these facts from persisted evidence,
+Git state and the append-only ledger before transitioning to `DONE`.

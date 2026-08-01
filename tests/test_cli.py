@@ -121,7 +121,7 @@ def test_cli_creates_and_reads_run(tmp_path: Path, capsys) -> None:
     contract.write_text(yaml.safe_dump(contract_data, sort_keys=False))
 
     assert main(["run", "create", str(contract), "--project", str(tmp_path)]) == 0
-    run_dir = tmp_path / ".loop-runs" / "loop-example-001"
+    run_dir = tmp_path / ".loop-engine" / "runs" / "loop-example-001"
     capsys.readouterr()
     assert main(["run", "status", str(run_dir)]) == 0
     output = json.loads(capsys.readouterr().out)
@@ -137,7 +137,7 @@ def test_cli_result_updates_progress_and_strategy_counters(
     contract = tmp_path / "contract.yaml"
     contract.write_text(yaml.safe_dump(data, sort_keys=False))
     assert main(["run", "create", str(contract), "--project", str(tmp_path)]) == 0
-    run_dir = tmp_path / ".loop-runs" / data["loop_id"]
+    run_dir = tmp_path / ".loop-engine" / "runs" / data["loop_id"]
     capsys.readouterr()
 
     assert main(
@@ -185,7 +185,7 @@ def test_cli_requires_contract_approval_before_planning(
     contract = tmp_path / "contract.yaml"
     contract.write_text(yaml.safe_dump(data, sort_keys=False))
     assert main(["run", "create", str(contract), "--project", str(tmp_path)]) == 0
-    run_dir = tmp_path / ".loop-runs" / data["loop_id"]
+    run_dir = tmp_path / ".loop-engine" / "runs" / data["loop_id"]
     for target in ("discovering", "contract_drafting", "awaiting_approval"):
         assert main(
             [
@@ -232,7 +232,7 @@ def test_cli_requires_contract_approval_before_planning(
     assert main(planning) == 0
 
 
-def test_cli_gate_check_requires_bound_approval_for_v030_production(
+def test_cli_gate_check_requires_bound_approval_for_production(
     tmp_path: Path,
     capsys,
 ) -> None:
@@ -249,32 +249,6 @@ def test_cli_gate_check_requires_bound_approval_for_v030_production(
     assert output["outcome"] == "pause"
     assert output["required_gate"] == "contract_approval"
     assert "confirmation" not in output
-
-
-def test_cli_gate_check_returns_confirmation_for_legacy_production(
-    tmp_path: Path,
-    capsys,
-) -> None:
-    contract = tmp_path / "contract.yaml"
-    contract.write_text(
-        yaml.safe_dump(
-            valid_contract_data(protocol_version="0.1.0"),
-            sort_keys=False,
-        )
-    )
-    request = tmp_path / "request.json"
-    request.write_text(
-        json.dumps({"kind": "production_access", "target": "production"}),
-        encoding="utf-8",
-    )
-
-    assert main(["gate", "check", str(contract), str(request)]) == 0
-    output = json.loads(capsys.readouterr().out)
-    assert output["outcome"] == "pause"
-    assert output["required_gate"] == "dangerous_action"
-    assert output["confirmation"].startswith("⚠️ 危险操作检测！")
-
-
 def test_cli_gate_check_uses_bound_run_authorization_for_autonomous_risk(
     tmp_path: Path,
     capsys,
@@ -295,7 +269,20 @@ def test_cli_gate_check_uses_bound_run_authorization_for_autonomous_risk(
         encoding="utf-8",
     )
     assert main(["run", "create", str(contract), "--project", str(tmp_path)]) == 0
-    run_dir = tmp_path / ".loop-runs" / data["loop_id"]
+    run_dir = tmp_path / ".loop-engine" / "runs" / data["loop_id"]
+    for target in ("discovering", "contract_drafting", "awaiting_approval"):
+        assert main(
+            [
+                "run",
+                "transition",
+                str(run_dir),
+                target,
+                "--actor",
+                "maker",
+                "--reason",
+                target,
+            ]
+        ) == 0
     assert main(
         [
             "run",
@@ -355,7 +342,7 @@ def test_cli_replaces_only_next_contract_version_while_awaiting(
     first = tmp_path / "contract-v1.yaml"
     first.write_text(yaml.safe_dump(data, sort_keys=False))
     assert main(["run", "create", str(first), "--project", str(tmp_path)]) == 0
-    run_dir = tmp_path / ".loop-runs" / data["loop_id"]
+    run_dir = tmp_path / ".loop-engine" / "runs" / data["loop_id"]
     for target in ("discovering", "contract_drafting", "awaiting_approval"):
         assert main(
             [
@@ -377,7 +364,7 @@ def test_cli_replaces_only_next_contract_version_while_awaiting(
             "--actor",
             "user",
             "--gate",
-            "final_acceptance",
+            "contract_approval",
             "--decision",
             "approve",
             "--summary",

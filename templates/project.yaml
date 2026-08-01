@@ -1,5 +1,4 @@
-protocol_constraint: ">=0.3,<0.4"
-run_root: ".loop-runs"
+protocol_version: 0.1.0
 instruction_files:
   - "AGENTS.md"
   - "CLAUDE.md"

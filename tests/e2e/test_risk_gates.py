@@ -1,7 +1,5 @@
 from datetime import UTC, datetime
 
-import pytest
-
 from loop_engineering.evidence import DoneEvaluator
 from loop_engineering.models.contract import LoopContract
 from loop_engineering.models.evidence import CompletionContext, EvidenceRecord
@@ -13,24 +11,13 @@ def scenario(
     risk: str,
     *,
     checker: CheckerVerdict | None,
-    human: bool,
-    protocol_version: str = "0.3.0",
 ) -> tuple[LoopContract, CompletionContext]:
     data = (
-        autonomous_risk_contract_data(
-            "file_write",
-            protocol_version=protocol_version,
-        )
-        if protocol_version in {"0.2.0", "0.3.0"} and risk == "high"
-        else valid_contract_data(protocol_version=protocol_version)
+        autonomous_risk_contract_data()
+        if risk == "high"
+        else valid_contract_data()
     )
-    data["mode"] = "autonomous"
     data["risk_level"] = risk
-    data["human_gates"] = (
-        ["contract_approval", "final_acceptance"]
-        if protocol_version == "0.1.0" and risk == "high"
-        else ["contract_approval"]
-    )
     data["budget"]["max_checker_revisions"] = {
         "low": 0,
         "medium": 2,
@@ -58,7 +45,6 @@ def scenario(
         evidence=[evidence],
         current_fingerprints={"target": "current"},
         checker_verdict=checker,
-        human_accepted=human,
         git_delivered={"target": True},
         scope_valid=True,
         gates_clear=True,
@@ -67,55 +53,19 @@ def scenario(
     return contract, context
 
 
-@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
-def test_medium_risk_rejects_revise_and_accepts_checker_accept(
-    protocol_version: str,
-) -> None:
-    contract, revise = scenario(
-        "medium",
-        checker=CheckerVerdict.REVISE,
-        human=False,
-        protocol_version=protocol_version,
-    )
+def test_medium_risk_rejects_revise_and_accepts_checker_accept() -> None:
+    contract, revise = scenario("medium", checker=CheckerVerdict.REVISE)
     assert DoneEvaluator(contract).evaluate(revise).done is False
-    _, accepted = scenario(
-        "medium",
-        checker=CheckerVerdict.ACCEPT,
-        human=False,
-        protocol_version=protocol_version,
-    )
+
+    _, accepted = scenario("medium", checker=CheckerVerdict.ACCEPT)
     assert DoneEvaluator(contract).evaluate(accepted).done is True
 
 
-@pytest.mark.parametrize("protocol_version", ["0.2.0", "0.3.0"])
-def test_bound_high_risk_requires_checker_but_not_final_human(
-    protocol_version: str,
-) -> None:
-    contract, accepted = scenario(
-        "high",
-        checker=CheckerVerdict.ACCEPT,
-        human=False,
-        protocol_version=protocol_version,
-    )
+def test_high_risk_requires_checker_but_not_a_second_human_gate() -> None:
+    contract, accepted = scenario("high", checker=CheckerVerdict.ACCEPT)
     assert DoneEvaluator(contract).evaluate(accepted).done is True
-    _, revise = scenario(
-        "high",
-        checker=CheckerVerdict.REVISE,
-        human=False,
-        protocol_version=protocol_version,
-    )
+
+    _, revise = scenario("high", checker=CheckerVerdict.REVISE)
     assert DoneEvaluator(contract).evaluate(revise).reasons == [
         "checker has not accepted"
-    ]
-
-
-def test_legacy_high_risk_autonomous_still_requires_final_human() -> None:
-    contract, missing_human = scenario(
-        "high",
-        checker=CheckerVerdict.ACCEPT,
-        human=False,
-        protocol_version="0.1.0",
-    )
-    assert DoneEvaluator(contract).evaluate(missing_human).reasons == [
-        "human final acceptance is missing"
     ]

@@ -8,6 +8,12 @@ from typing import Any
 import yaml
 from filelock import FileLock
 
+from loop_engineering.layout import (
+    CONTROL_DIR_NAME,
+    RUNS_DIR_NAME,
+    cache_root,
+    runs_root,
+)
 from loop_engineering.models.contract import LoopContract
 from loop_engineering.models.run import (
     CheckerVerdict,
@@ -17,10 +23,8 @@ from loop_engineering.models.run import (
     LoopState,
     LoopStatus,
 )
+from loop_engineering.project import ensure_project
 from loop_engineering.redaction import redact
-
-_PROTOCOL_ORDER = {"0.1.0": 1, "0.2.0": 2, "0.3.0": 3}
-_BOUND_AUTH_PROTOCOLS = {"0.2.0", "0.3.0"}
 
 
 class LedgerCorruption(RuntimeError):
@@ -38,16 +42,33 @@ def _atomic_write(path: Path, content: str) -> None:
 
 class RunStore:
     def __init__(self, run_dir: Path) -> None:
+        run_dir = run_dir.resolve()
+        if (
+            run_dir.parent.name != RUNS_DIR_NAME
+            or run_dir.parent.parent.name != CONTROL_DIR_NAME
+        ):
+            raise ValueError(
+                "run directory must be inside the canonical .loop-engine/runs directory"
+            )
+        project_root = run_dir.parent.parent.parent
+        if run_dir.parent != runs_root(project_root):
+            raise ValueError(
+                "run directory must be inside the canonical .loop-engine/runs directory"
+            )
         self.run_dir = run_dir
         self.contract_path = run_dir / "contract.yaml"
         self.state_path = run_dir / "state.json"
         self.events_path = run_dir / "events.jsonl"
         self.evidence_dir = run_dir / "evidence"
         self.lock = FileLock(str(run_dir / ".ledger.lock"))
+        self.project_root = project_root
+        self.cache_dir = cache_root(self.project_root) / "runs" / run_dir.name
 
     @classmethod
     def create(cls, project_root: Path, contract: LoopContract) -> "RunStore":
-        run_dir = project_root.resolve() / ".loop-runs" / contract.loop_id
+        project_root = project_root.resolve()
+        ensure_project(project_root)
+        run_dir = runs_root(project_root) / contract.loop_id
         run_dir.mkdir(parents=True, exist_ok=False)
         store = cls(run_dir)
         store.evidence_dir.mkdir()
@@ -89,6 +110,7 @@ class RunStore:
         return LoopState.model_validate_json(self.state_path.read_text(encoding="utf-8"))
 
     def save_state(self, state: LoopState) -> None:
+        state = LoopState.model_validate(state.model_dump(mode="python"))
         _atomic_write(
             self.state_path,
             json.dumps(state.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
@@ -151,6 +173,8 @@ class RunStore:
         summary: str,
         payload: dict[str, Any],
     ) -> str:
+        if self.pending_intents():
+            raise ValueError("pending intent must be reconciled before a new action")
         action_id = str(uuid.uuid4())
         self.append_event(
             actor=actor,
@@ -236,12 +260,15 @@ class RunStore:
         target: LoopStatus,
         reason: str,
     ) -> LoopState:
-        previous = self.load_state()
         if target is LoopStatus.DONE:
             raise ValueError("use RunStore.complete for DONE")
-        if previous.status is LoopStatus.AWAITING_APPROVAL and target in {
+        if target in {
             LoopStatus.DESIGNING,
             LoopStatus.PLANNING,
+            LoopStatus.EXECUTING,
+            LoopStatus.VERIFYING,
+            LoopStatus.CHECKING,
+            LoopStatus.DECIDING,
         }:
             summary = self.summary()
             approvals = summary["approvals"]
@@ -341,7 +368,6 @@ class RunStore:
                 for repository in contract.repositories
             },
             checker_verdict=checker,
-            human_accepted=approvals.get("final_acceptance") is True,
             git_delivered=git_delivered,
             scope_valid=evaluate_scope(contract).valid,
             gates_clear=gates_clear,
@@ -358,7 +384,7 @@ class RunStore:
             reason=reason,
         )
 
-    def record_approval(
+    def _record_approval_event(
         self,
         *,
         actor: str,
@@ -373,24 +399,41 @@ class RunStore:
             contract = LoopContract.model_validate(
                 yaml.safe_load(self.contract_path.read_text(encoding="utf-8"))
             )
-            if contract.protocol_version in _BOUND_AUTH_PROTOCOLS:
-                payload.update(
-                    {
-                        "protocol_version": contract.protocol_version,
-                        "contract_version": contract.contract_version,
-                        "contract_sha256": contract_fingerprint(contract),
-                        "accepted_risk_ids": sorted(
-                            operation.risk_id
-                            for operation in contract.authorized_operations
-                            if operation.risk_id is not None
-                        ),
-                    }
-                )
+            payload.update(
+                {
+                    "protocol_version": contract.protocol_version,
+                    "contract_version": contract.contract_version,
+                    "contract_sha256": contract_fingerprint(contract),
+                    "accepted_risk_ids": sorted(
+                        operation.risk_id
+                        for operation in contract.authorized_operations
+                    ),
+                }
+            )
         return self.append_event(
             actor=actor,
             kind=EventKind.APPROVAL,
             summary=summary,
             payload=payload,
+        )
+
+    def record_approval(
+        self,
+        *,
+        actor: str,
+        gate: str,
+        approved: bool,
+        summary: str,
+    ) -> LoopEvent:
+        if gate != "contract_approval":
+            raise ValueError("public approval accepts only contract_approval")
+        if self.load_state().status is not LoopStatus.AWAITING_APPROVAL:
+            raise ValueError("contract approval requires awaiting_approval")
+        return self._record_approval_event(
+            actor=actor,
+            gate=gate,
+            approved=approved,
+            summary=summary,
         )
 
     def current_contract_authorization(self) -> ContractAuthorization | None:
@@ -399,8 +442,6 @@ class RunStore:
         contract = LoopContract.model_validate(
             yaml.safe_load(self.contract_path.read_text(encoding="utf-8"))
         )
-        if contract.protocol_version not in _BOUND_AUTH_PROTOCOLS:
-            return None
         latest: LoopEvent | None = None
         for event in self.events():
             if (
@@ -426,7 +467,6 @@ class RunStore:
         expected_risk_ids = sorted(
             operation.risk_id
             for operation in contract.authorized_operations
-            if operation.risk_id is not None
         )
         if (
             authorization.protocol_version != contract.protocol_version
@@ -478,14 +518,6 @@ class RunStore:
             raise ValueError("revised contract must retain loop_id")
         if revised.contract_version != current.contract_version + 1:
             raise ValueError("revised contract version must increment by one")
-        if (
-            _PROTOCOL_ORDER[revised.protocol_version]
-            < _PROTOCOL_ORDER[current.protocol_version]
-        ):
-            raise ValueError(
-                f"protocol downgrade from {current.protocol_version} "
-                f"to {revised.protocol_version} is forbidden"
-            )
         _atomic_write(
             self.contract_path,
             yaml.safe_dump(revised.model_dump(mode="json"), sort_keys=False),
@@ -494,7 +526,7 @@ class RunStore:
             update={"contract_version": revised.contract_version}
         )
         self.save_state(updated)
-        event = self.record_approval(
+        event = self._record_approval_event(
             actor=actor,
             gate="contract_revision",
             approved=True,
@@ -507,9 +539,6 @@ class RunStore:
     def summary(self) -> dict[str, Any]:
         events = self.events()
         state = self.load_state()
-        contract = LoopContract.model_validate(
-            yaml.safe_load(self.contract_path.read_text(encoding="utf-8"))
-        )
         approvals: dict[str, bool] = {}
         latest_checker: str | None = None
         for event in events:
@@ -525,9 +554,6 @@ class RunStore:
                 event.action_id for event in self.pending_intents() if event.action_id
             ],
             "approvals": approvals,
-            "contract_authorized": (
-                contract.protocol_version == "0.1.0"
-                or self.current_contract_authorization() is not None
-            ),
+            "contract_authorized": self.current_contract_authorization() is not None,
             "checker_verdict": latest_checker,
         }

@@ -42,7 +42,7 @@ def test_discover_project_from_nested_directory(tmp_path: Path) -> None:
     root, config = discover_project(nested)
 
     assert root == project.resolve()
-    assert config.run_root == ".loop-runs"
+    assert config.protocol_version == "0.1.0"
 
 
 def test_load_dashboard_reads_only_direct_valid_run_directories(
@@ -52,9 +52,10 @@ def test_load_dashboard_reads_only_direct_valid_run_directories(
     project.mkdir()
     initialize_project(project)
     store = create_run(project, "loop-active")
-    (project / ".loop-runs" / ".drafts").mkdir()
-    (project / ".loop-runs" / "broken").mkdir()
-    (project / ".loop-runs" / "linked").symlink_to(
+    run_root = project / ".loop-engine" / "runs"
+    (run_root / ".draft").mkdir()
+    (run_root / "broken").mkdir()
+    (run_root / "linked").symlink_to(
         store.run_dir,
         target_is_directory=True,
     )
@@ -117,6 +118,12 @@ def test_load_dashboard_aggregates_current_run_facts(tmp_path: Path) -> None:
         summary="VAL-1 passed",
         payload={"evidence": evidence.model_dump(mode="json")},
     )
+    for target in (
+        LoopStatus.DISCOVERING,
+        LoopStatus.CONTRACT_DRAFTING,
+        LoopStatus.AWAITING_APPROVAL,
+    ):
+        store.record_transition(actor="maker", target=target, reason=target.value)
     store.record_approval(
         actor="user",
         gate="contract_approval",
@@ -140,6 +147,8 @@ def test_load_dashboard_aggregates_current_run_facts(tmp_path: Path) -> None:
             "no_progress_cycles": 1,
             "started_at": fixed_now - timedelta(minutes=12),
             "updated_at": fixed_now - timedelta(seconds=5),
+            "paused_at": None,
+            "paused_seconds": 0,
         }
     )
     store.save_state(state)
@@ -147,7 +156,7 @@ def test_load_dashboard_aggregates_current_run_facts(tmp_path: Path) -> None:
     run = watch.load_dashboard(project, now=fixed_now).runs[0]
 
     assert run.contract_version == 1
-    assert run.protocol_version == "0.3.0"
+    assert run.protocol_version == "0.1.0"
     assert run.authorized is True
     assert [(item.criterion_id, item.state) for item in run.criteria] == [
         ("AC-1", "passed")
@@ -356,7 +365,7 @@ def test_render_dashboard_strips_untrusted_terminal_control_sequences(
         "safe\x1b[2J\nnext\x00item"
     )
     RunStore.create(project, LoopContract.model_validate(contract_data))
-    (project / ".loop-runs" / "broken\x1b[31m").mkdir()
+    (project / ".loop-engine" / "runs" / "broken\x1b[31m").mkdir()
 
     output = watch.render_dashboard(
         watch.load_dashboard(project),

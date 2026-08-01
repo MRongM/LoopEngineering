@@ -13,7 +13,7 @@
 
 Loop Engineering is an evidence-gated, recoverable execution protocol and toolset for coding agents.
 
-The active milestone advances Core Protocol to 0.3.0, removes `collaborative`, keeps only `autonomous`, and makes `loop-engine` the sole Agent Shell CLI. Product, repository, Python distribution package `loop-engineering`, and `$loop-engine` Skill trigger names remain unchanged.
+The active milestone defines the first public Core Protocol as 0.1.0. It is execution-closed, keeps only `autonomous`, uses `loop-engine` as the sole Agent Shell CLI and Codex Skill trigger, installs the managed Skill checkout at `skills/loop-engine`, and keeps the Python distribution package `loop-engineering`.
 
 **Core value:** An Agent operates autonomously only inside an explicitly approved, verifiable contract and reaches `DONE` only when fresh evidence satisfies that contract.
 

@@ -40,7 +40,7 @@ def test_low_risk_loop_reaches_done_only_after_fresh_evidence(tmp_path: Path) ->
         "def test_value():\n    assert 2 + 2 == 4\n",
         encoding="utf-8",
     )
-    initialize_project(project, update_gitignore=True)
+    initialize_project(project)
     git("add", ".", cwd=project)
     git("commit", "-m", "initial", cwd=project)
 
@@ -92,7 +92,6 @@ def test_low_risk_loop_reaches_done_only_after_fresh_evidence(tmp_path: Path) ->
         evidence=[evidence],
         current_fingerprints={"target": git_fingerprint(project)},
         checker_verdict=None,
-        human_accepted=False,
         git_delivered={"target": True},
         scope_valid=evaluate_scope(contract).valid,
         gates_clear=True,
