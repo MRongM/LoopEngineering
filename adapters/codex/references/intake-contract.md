@@ -38,6 +38,13 @@ validation snapshots. Never stage or commit runtime content; only
 
 ## Intake and contract drafting
 
+At the start of every explicit new Intake, tell the user once that they may provide an existing
+spec or plan as source material for the Loop Contract. If the request already names or includes
+a spec or plan, acknowledge that you will read it and map it into the contract draft. If neither
+is provided, mention the option without blocking Intake; continue from the current request and
+repository facts. Source material is not contract approval and does not replace required contract
+fields, repository facts or applicable instructions.
+
 1. Classify the request as read-only or state-changing.
 2. Set `protocol_version: 0.1.0` and `mode: autonomous` for every new task.
    Do not ask the user to choose a control mode. Reject incompatible mode input instead of

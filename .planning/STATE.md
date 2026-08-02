@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.1.0
 milestone_name: first-public-release
 status: completed
-last_updated: "2026-08-01T15:38:06Z"
-last_activity: 2026-08-01 -- Resolved runtime Gate and Checker attestation hardening
+last_updated: "2026-08-02T02:09:16Z"
+last_activity: 2026-08-02 - Completed quick task 260802-dus: Loop Skill Intake spec/plan prompt
 progress:
   total_phases: 1
   completed_phases: 1
@@ -66,6 +66,8 @@ None.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260801-my8 | Backport Codex Skill progressive disclosure while preserving Protocol 0.1.0 | 2026-08-01 | uncommitted | [260801-my8-backport-codex-skill-progressive-disclos](./quick/260801-my8-backport-codex-skill-progressive-disclos/) |
+| 260802-d7i | 增加根目录 update.sh，自我更新 Codex 托管 checkout，并委托现有生命周期管理器 | 2026-08-02 | uncommitted | [260802-d7i-update-sh-codex-checkout](./quick/260802-d7i-update-sh-codex-checkout/) |
+| 260802-dus | Loop Skill Intake 告知用户可用 spec/plan 生成契约 | 2026-08-02 | uncommitted | [260802-dus-loop-skill-intake-spec-plan](./quick/260802-dus-loop-skill-intake-spec-plan/) |
 
 ## Constraints Preserved
 

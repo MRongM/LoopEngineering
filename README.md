@@ -99,6 +99,17 @@ stashes, unpreserved commits, detached HEAD, alternate origins, and non-fast-for
 If CLI reinstall fails after Git succeeds, the updated Skill checkout is retained. Resolve the
 reported `uv` problem and rerun the same command; the manager never deletes or rewinds it.
 
+### Unix update script
+
+From the managed checkout root, run the checked-in wrapper:
+
+```bash
+./update.sh
+```
+
+The wrapper honors `CODEX_HOME` and otherwise uses `$HOME/.codex`. It can also be invoked by
+absolute path from another working directory.
+
 ### Unix one-line update
 
 ```bash

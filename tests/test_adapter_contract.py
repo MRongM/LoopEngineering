@@ -146,6 +146,18 @@ def test_codex_skill_forms_one_execution_closed_contract() -> None:
         assert obsolete not in body
 
 
+def test_codex_skill_tells_new_intake_users_about_spec_or_plan_sources() -> None:
+    intake = " ".join(REFERENCE_PATHS[0].read_text(encoding="utf-8").split())
+
+    for required in (
+        "At the start of every explicit new Intake, tell the user once that they may provide an existing spec or plan as source material for the Loop Contract.",
+        "If the request already names or includes a spec or plan, acknowledge that you will read it and map it into the contract draft.",
+        "If neither is provided, mention the option without blocking Intake; continue from the current request and repository facts.",
+        "Source material is not contract approval and does not replace required contract fields, repository facts or applicable instructions.",
+    ):
+        assert required in intake
+
+
 def test_codex_skill_continues_without_routine_interruptions_after_approval() -> None:
     body = read_adapter_protocol()
 
