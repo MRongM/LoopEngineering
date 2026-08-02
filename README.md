@@ -153,6 +153,13 @@ under `.loop-engine/` is local and ignored by its internal `.gitignore`; only
 `project.yaml` and that `.gitignore` may be tracked. Validation runs in disposable
 snapshots under `.loop-engine/cache/` so build artifacts cannot pollute the source workspace.
 
+Loop Engineering is a cooperative enforcement protocol, not an adversarial sandbox. Core
+rechecks approval, state, budget and Gate whenever its checked mutation entry points are used,
+but it cannot intercept raw host filesystem, shell or network tools. A compliant Adapter must
+route every external mutation through those entries. Checker fact freshness is reconstructed by
+Core; independent Checker identity is asserted by the host Adapter rather than cryptographically
+proven by Core.
+
 ## Names and release boundary
 
 The product and repository are **Loop Engineering**. The Python distribution is

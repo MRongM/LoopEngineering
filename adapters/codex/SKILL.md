@@ -23,6 +23,11 @@ Never use prose as evidence of `DONE`. Every external mutation still requires cu
 authorization, an ordinary budget and Gate check, a preceding append-only intent, an observed
 result and fresh validator evidence. Medium/high-risk work still requires an independent Checker.
 
+Loop Engineering is a cooperative enforcement protocol, not an adversarial sandbox. Core cannot
+intercept raw host filesystem, shell or network tools. The Adapter must route every external
+mutation through the checked Core entry points; bypassing them is protocol noncompliance, not an
+alternate execution path.
+
 ## Task-scoped continuation
 
 Only explicit `$loop-engine` may start a new Loop task.

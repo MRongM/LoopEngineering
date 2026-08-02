@@ -25,11 +25,17 @@
 - [x] **RUN-04**: 等待批准和暂停不消耗活跃时间预算。
 - [x] **RUN-05**: 批准后在合同闭包内持续执行，只在合同修订、外部硬门、无法调和的
   intent、取消或权威终态暂停。
+- [x] **RUN-06**: 动作 intent 的记录入口在同一操作中重验当前批准、状态、预算与精确 Gate；
+  通用 result 不能伪造 Git 交付或验证证据。
 
 ### Evidence and safety
 
 - [x] **EVID-01**: 验证只在 `.loop-engine/cache/` 的一次性 Git 快照中运行。
 - [x] **EVID-02**: timeout、启动失败、快照失败和源工作区变化都产生关闭的失败证据。
+- [x] **EVID-03**: 验证入口在启动进程前校验当前合同、批准、`verifying` 状态、预算和
+  未决 intent，并由专用结果入口写入权威证据。
+- [x] **EVID-04**: 中高风险 Checker verdict 绑定合同哈希、源码指纹、证据摘要和已审
+  账本序列；后续变更使 attestation 失效。
 - [x] **SAFE-01**: 仓库及 worktree 使用解析后的绝对路径；动作同时匹配计划、范围、
   权限和精确风险授权。
 - [x] **SAFE-02**: 强推、历史改写、reset-hard、自动合并和部署永久禁止。
@@ -42,6 +48,8 @@
   `loop-engine`。
 - [x] **DOC-01**: README、接入指南、协议、发布身份和 Adapter 对首版语义一致。
 - [x] **TEST-01**: 全量测试、Ruff、Schema 重建、构建和差异完整性检查全部通过。
+- [x] **TEST-02**: Core 入口具备未批准、错误状态、超预算、伪造结果和 stale Checker
+  的行为负向测试；真实 Codex 调度身份仍属于明确记录的 Adapter/宿主信任边界。
 
 ## Out of scope
 
@@ -55,8 +63,8 @@
 | Requirement group | Delivery | Status |
 |---|---|---|
 | CORE | Contract models, GatePolicy, ledger | Complete |
-| RUN | Project layout, state machine, Adapter | Complete |
-| EVID / SAFE | ValidationRunner, Git Shell, strict paths | Complete |
+| RUN | Project layout, checked action boundary, state machine, Adapter | Complete |
+| EVID / SAFE | ValidationRunner, Checker attestation, Git Shell, strict paths | Complete |
 | NAME / DOC | Lifecycle manager and release documents | Complete |
 | TEST | Regression, static, schema and package evidence | Complete |
 

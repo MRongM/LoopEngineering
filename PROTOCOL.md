@@ -23,9 +23,19 @@ older-version parser, compatibility branch, downgrade path or automatic migratio
   permanently denied.
 - Every external state change MUST have a persisted intent before execution and a matching
   observed result afterward.
+- The entry that records an action intent MUST itself revalidate the current approval, required
+  Run state, available budget and exact Gate decision; a prior standalone Gate check is not an
+  execution capability.
+- Git-delivery and validator-evidence results MUST come from their dedicated Core executors;
+  a generic result MUST NOT assert either authoritative fact.
 - Evidence MUST be fresh, command-backed, bound to the current contract and source
   fingerprint, and collected with argv subprocesses using `shell=False`.
 - The Agent MUST NOT claim `DONE` from prose, confidence or stale output.
+
+Core is a cooperative enforcement protocol and CLI, not an adversarial host sandbox. It can reject
+invalid calls made through its entry points, but cannot intercept a host's raw filesystem, shell or
+network tools. An Adapter claiming protocol compliance MUST route every external mutation through
+the checked Core entry points and treat bypass as Adapter or host noncompliance.
 
 ## Project control root
 
@@ -123,6 +133,13 @@ immediately before an external mutation and a matching `result` immediately afte
 real state. A crash between them leaves a pending intent that MUST be reconciled before any
 retry. Secrets and complete model reasoning MUST NOT be persisted.
 
+The generic action-intent entry accepts the exact strict `ActionRequest`, evaluates it against the
+persisted current contract and authorization, checks the required Run state and budget, obtains an
+`allow` Gate decision, and persists that same request in the intent. Supplemental metadata cannot
+replace the checked request. Generic results may close ordinary action intents, including observed
+failures, but cannot manufacture Git-delivery or validator-evidence facts. Those results are emitted
+only by the matching Git or validation execution path and must match the checked intent.
+
 Contract replacement invalidates evidence from prior contract versions. Cleanup or a source
 revision invalidates fingerprints. Ledger corruption and partial tails MUST fail closed.
 
@@ -137,6 +154,10 @@ The source repository fingerprint is captured before and after validation. A val
 failure, timeout, non-zero exit, source mutation or unavailable workspace state MUST create a
 closed failed result, never an unmatched intent. Evidence records include timestamps, exit
 status, redacted stdout/stderr hashes, source fingerprint and workspace-integrity facts.
+
+Before creating a validation intent or process, the validator MUST require the persisted current
+contract, its bound authorization, `verifying` state, available budget and no unresolved intent.
+Only the validator path may emit an authoritative evidence result.
 
 ## Gate policy
 
@@ -157,13 +178,28 @@ The Agent Shell Git commands MUST enforce the bound Gate decision themselves, re
 `executing` state, and automatically record a matching intent/result pair. A failed Git
 operation MUST close its intent with an observed failed result.
 
+## Checker attestation
+
+Medium/high-risk completion requires a fresh independent Checker dispatched by the Adapter. The
+Adapter MUST pass the actual fresh host review identifier; Core rejects reserved or reused Checker
+identifiers. The identifier is a host assertion, not cryptographic identity proof, so dispatch
+independence remains inside the documented Adapter/host trust boundary.
+
+Core records the verdict as a strict attestation derived from current facts: protocol and contract
+versions, canonical contract SHA-256, repository source fingerprints, deterministic digests of
+authoritative evidence and the last ledger sequence reviewed. `ACCEPT` cannot be recorded without
+fresh passing validation evidence. An attestation is current only while all bindings still match;
+any later intent/result, contract change, source change or authoritative evidence change makes it
+unusable for completion. Findings and stale verdicts remain visible as history but are not `DONE`
+facts.
+
 ## DONE predicate
 
 `DONE` requires all of the following current facts:
 
 - every acceptance criterion has passing evidence from its required command;
 - evidence contract version, repository, criterion and fingerprint match;
-- medium/high risk has Checker `ACCEPT`;
+- medium/high risk has a current Checker attestation with `ACCEPT`;
 - required Git delivery has observed successful results;
 - actual diff is inside approved scope;
 - no pending intent or unresolved gate remains;

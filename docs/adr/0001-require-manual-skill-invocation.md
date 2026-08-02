@@ -28,7 +28,7 @@ unrelated, cancelled or terminal binding must return without Loop mutation.
 - Natural-language approval still requires one current complete contract summary and an
   unambiguous decision; it does not grant new scope or permissions.
 - The product remains Loop Engineering and the Python distribution remains
-  `loop-engineering`; Protocol 0.3 has one Autonomous control mode and `loop-engine` is
+  `loop-engineering`; Protocol 0.1.0 has one Autonomous control mode and `loop-engine` is
   the only Agent Shell executable.
 
 ## Follow-up decision

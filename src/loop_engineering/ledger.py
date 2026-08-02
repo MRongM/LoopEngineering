@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import uuid
@@ -14,11 +15,14 @@ from loop_engineering.layout import (
     cache_root,
     runs_root,
 )
+from loop_engineering.models.action import ActionKind, ActionRequest
 from loop_engineering.models.contract import LoopContract
 from loop_engineering.models.run import (
+    CheckerAttestation,
     CheckerVerdict,
     ContractAuthorization,
     EventKind,
+    GitResult,
     LoopEvent,
     LoopState,
     LoopStatus,
@@ -166,7 +170,7 @@ class RunStore:
             self.save_state(state.model_copy(update={"last_event_sequence": sequence}))
             return event
 
-    def record_intent(
+    def _record_intent(
         self,
         *,
         actor: str,
@@ -185,7 +189,93 @@ class RunStore:
         )
         return action_id
 
+    def record_action_intent(
+        self,
+        *,
+        actor: str,
+        summary: str,
+        request: ActionRequest,
+        payload: dict[str, Any],
+    ) -> str:
+        from loop_engineering.policy import GateOutcome, GatePolicy
+        from loop_engineering.state_machine import BudgetCondition, budget_status
+
+        contract = LoopContract.model_validate(
+            yaml.safe_load(self.contract_path.read_text(encoding="utf-8"))
+        )
+        decision = GatePolicy(
+            contract,
+            authorization=self.current_contract_authorization(),
+        ).evaluate(request)
+        if decision.outcome is not GateOutcome.ALLOW:
+            raise PermissionError(decision.reason)
+
+        state = self.load_state()
+        is_done_platform_action = (
+            request.kind is ActionKind.PLATFORM_STATE
+            and state.status is LoopStatus.DONE
+        )
+        if state.status is not LoopStatus.EXECUTING and not is_done_platform_action:
+            raise ValueError("external mutation requires executing state")
+
+        if state.status is not LoopStatus.DONE:
+            budget = budget_status(contract, state)
+            if budget.condition is BudgetCondition.EXHAUSTED:
+                raise ValueError(
+                    "action budget is exhausted: " + "; ".join(budget.reasons)
+                )
+            if budget.condition is BudgetCondition.DIAGNOSIS_REQUIRED:
+                raise ValueError(
+                    "action requires diagnosis before another mutation: "
+                    + "; ".join(budget.reasons)
+                )
+        if "request" in payload:
+            raise ValueError("action intent payload cannot replace the checked request")
+        return self._record_intent(
+            actor=actor,
+            summary=summary,
+            payload={
+                **payload,
+                "request": request.model_dump(mode="json"),
+            },
+        )
+
+    def record_validation_intent(
+        self,
+        *,
+        command_id: str,
+        payload: dict[str, Any],
+    ) -> str:
+        return self._record_intent(
+            actor="validator",
+            summary=f"run {command_id}",
+            payload={"validation": {"command_id": command_id}, **payload},
+        )
+
     def record_result(
+        self,
+        *,
+        action_id: str,
+        actor: str,
+        summary: str,
+        payload: dict[str, Any],
+        made_progress: bool | None = None,
+        same_strategy: bool | None = None,
+    ) -> LoopEvent:
+        if {"git", "evidence"} & payload.keys():
+            raise ValueError(
+                "reserved result payload requires its authoritative producer"
+            )
+        return self._record_result(
+            action_id=action_id,
+            actor=actor,
+            summary=summary,
+            payload=payload,
+            made_progress=made_progress,
+            same_strategy=same_strategy,
+        )
+
+    def _record_result(
         self,
         *,
         action_id: str,
@@ -217,6 +307,77 @@ class RunStore:
             self.save_state(state.model_copy(update=updates))
         return event
 
+    def record_git_result(
+        self,
+        *,
+        action_id: str,
+        result: GitResult,
+    ) -> LoopEvent:
+        pending = next(
+            (
+                event
+                for event in self.pending_intents()
+                if event.action_id == action_id
+            ),
+            None,
+        )
+        if pending is None:
+            raise ValueError("Git result must match one unresolved intent")
+        try:
+            request = ActionRequest.model_validate(pending.payload["request"])
+        except (KeyError, ValueError) as error:
+            raise ValueError("Git result requires a checked action intent") from error
+        expected_kinds = {
+            "prepare": ActionKind.GIT_WORKTREE,
+            "commit": ActionKind.GIT_COMMIT,
+            "push": ActionKind.GIT_PUSH,
+            "create_pr": ActionKind.CREATE_PR,
+        }
+        if (
+            request.kind is not expected_kinds[result.operation]
+            or request.repository_id != result.repository_id
+        ):
+            raise ValueError("Git result does not match its checked action intent")
+        return self._record_result(
+            action_id=action_id,
+            actor="git",
+            summary=(
+                f"Git {result.operation} succeeded"
+                if result.success
+                else f"Git {result.operation} failed"
+            ),
+            payload={"git": result.model_dump(mode="json", exclude_none=True)},
+        )
+
+    def record_evidence_result(
+        self,
+        *,
+        action_id: str,
+        evidence: Any,
+    ) -> LoopEvent:
+        from loop_engineering.models.evidence import EvidenceRecord
+
+        record = EvidenceRecord.model_validate(evidence)
+        pending = next(
+            (
+                event
+                for event in self.pending_intents()
+                if event.action_id == action_id
+            ),
+            None,
+        )
+        if pending is None:
+            raise ValueError("evidence result must match one unresolved intent")
+        validation = pending.payload.get("validation")
+        if not isinstance(validation, dict) or validation.get("command_id") != record.command_id:
+            raise ValueError("evidence result does not match its validation intent")
+        return self._record_result(
+            action_id=action_id,
+            actor="validator",
+            summary=f"{record.command_id} exit={record.exit_code}",
+            payload={"evidence": record.model_dump(mode="json")},
+        )
+
     def pending_intents(self) -> list[LoopEvent]:
         events = self.events()
         completed = {
@@ -229,6 +390,112 @@ class RunStore:
             for event in events
             if event.kind is EventKind.INTENT and event.action_id not in completed
         ]
+
+    def _authoritative_evidence(self) -> list[Any]:
+        from loop_engineering.models.evidence import EvidenceRecord
+
+        state = self.load_state()
+        intents = {
+            event.action_id: event
+            for event in self.events()
+            if event.contract_version == state.contract_version
+            and event.kind is EventKind.INTENT
+            and event.action_id
+        }
+        evidence: list[EvidenceRecord] = []
+        evidence_root = self.evidence_dir.resolve()
+        for event in self.events():
+            if (
+                event.contract_version != state.contract_version
+                or event.kind is not EventKind.RESULT
+            ):
+                continue
+            raw_evidence = event.payload.get("evidence")
+            if not isinstance(raw_evidence, dict):
+                continue
+            intent = intents.get(event.action_id)
+            validation = intent.payload.get("validation") if intent else None
+            if event.actor != "validator" or not isinstance(validation, dict):
+                raise ValueError("evidence result lacks authoritative validator provenance")
+            record = EvidenceRecord.model_validate(raw_evidence)
+            if validation.get("command_id") != record.command_id:
+                raise ValueError("evidence result does not match its validation intent")
+            if record.contract_version != state.contract_version:
+                raise ValueError("evidence contract version does not match run")
+            for filename, expected_hash in (
+                (record.stdout_file, record.stdout_sha256),
+                (record.stderr_file, record.stderr_sha256),
+            ):
+                path = (evidence_root / filename).resolve()
+                if not path.is_relative_to(evidence_root) or not path.is_file():
+                    raise ValueError("evidence file is missing or outside run directory")
+                if hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash:
+                    raise ValueError("evidence file hash does not match ledger")
+            evidence.append(record)
+        return evidence
+
+    @staticmethod
+    def _evidence_digests(evidence: list[Any]) -> dict[str, str]:
+        return {
+            record.evidence_id: hashlib.sha256(
+                json.dumps(
+                    record.model_dump(mode="json"),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode("utf-8")
+            ).hexdigest()
+            for record in evidence
+        }
+
+    def current_checker_attestation(self) -> CheckerAttestation | None:
+        from loop_engineering.contract import contract_fingerprint
+        from loop_engineering.evidence import git_fingerprint
+
+        contract = LoopContract.model_validate(
+            yaml.safe_load(self.contract_path.read_text(encoding="utf-8"))
+        )
+        state = self.load_state()
+        latest: LoopEvent | None = None
+        events = self.events()
+        for event in events:
+            if (
+                event.contract_version == state.contract_version
+                and event.kind is EventKind.CHECKER
+            ):
+                latest = event
+        if latest is None:
+            return None
+        attestation = CheckerAttestation.model_validate(latest.payload)
+        if latest.actor != f"checker:{attestation.checker_id}":
+            return None
+        if self.current_contract_authorization() is None:
+            return None
+        if (
+            attestation.protocol_version != contract.protocol_version
+            or attestation.contract_version != contract.contract_version
+            or attestation.contract_sha256 != contract_fingerprint(contract)
+            or attestation.reviewed_through_sequence != latest.sequence - 1
+        ):
+            return None
+        if any(
+            event.contract_version == state.contract_version
+            and event.sequence > latest.sequence
+            and event.kind in {EventKind.INTENT, EventKind.RESULT}
+            for event in events
+        ):
+            return None
+        fingerprints = {
+            repository.id: git_fingerprint(repository.path)
+            for repository in contract.repositories
+        }
+        evidence = self._authoritative_evidence()
+        if (
+            attestation.source_fingerprints != fingerprints
+            or attestation.evidence_digests != self._evidence_digests(evidence)
+        ):
+            return None
+        return attestation
 
     def _record_transition(
         self,
@@ -289,14 +556,12 @@ class RunStore:
         actor: str,
         reason: str,
     ) -> LoopState:
-        import hashlib
-
         from loop_engineering.evidence import (
             DoneEvaluator,
             evaluate_scope,
             git_fingerprint,
         )
-        from loop_engineering.models.evidence import CompletionContext, EvidenceRecord
+        from loop_engineering.models.evidence import CompletionContext
 
         contract = LoopContract.model_validate(
             yaml.safe_load(self.contract_path.read_text(encoding="utf-8"))
@@ -313,43 +578,49 @@ class RunStore:
             and summary["contract_authorized"]
             and all(approvals.get(gate) is True for gate in required_gates)
         )
-        checker = (
-            CheckerVerdict(summary["checker_verdict"])
-            if summary["checker_verdict"]
-            else None
-        )
-        evidence: list[EvidenceRecord] = []
+        checker_attestation = self.current_checker_attestation()
+        checker = checker_attestation.verdict if checker_attestation else None
+        evidence = self._authoritative_evidence()
         git_operations: dict[str, set[str]] = {}
-        evidence_root = self.evidence_dir.resolve()
+        intents = {
+            event.action_id: event
+            for event in self.events()
+            if event.contract_version == state.contract_version
+            and event.kind is EventKind.INTENT
+            and event.action_id
+        }
+        expected_git_kinds = {
+            "prepare": ActionKind.GIT_WORKTREE,
+            "commit": ActionKind.GIT_COMMIT,
+            "push": ActionKind.GIT_PUSH,
+            "create_pr": ActionKind.CREATE_PR,
+        }
         for event in self.events():
             if (
                 event.contract_version != state.contract_version
                 or event.kind is not EventKind.RESULT
             ):
                 continue
-            raw_evidence = event.payload.get("evidence")
-            if isinstance(raw_evidence, dict):
-                record = EvidenceRecord.model_validate(raw_evidence)
-                if record.contract_version != state.contract_version:
-                    raise ValueError("evidence contract version does not match run")
-                for filename, expected_hash in (
-                    (record.stdout_file, record.stdout_sha256),
-                    (record.stderr_file, record.stderr_sha256),
-                ):
-                    path = (evidence_root / filename).resolve()
-                    if not path.is_relative_to(evidence_root) or not path.is_file():
-                        raise ValueError(
-                            "evidence file is missing or outside run directory"
-                        )
-                    if hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash:
-                        raise ValueError("evidence file hash does not match ledger")
-                evidence.append(record)
             git_result = event.payload.get("git")
-            if isinstance(git_result, dict) and git_result.get("success") is True:
-                repository_id = git_result.get("repository_id")
-                operation = git_result.get("operation")
-                if isinstance(repository_id, str) and isinstance(operation, str):
-                    git_operations.setdefault(repository_id, set()).add(operation)
+            if not isinstance(git_result, dict) or event.actor != "git":
+                continue
+            result = GitResult.model_validate(git_result)
+            if not result.success:
+                continue
+            intent = intents.get(event.action_id)
+            try:
+                request = ActionRequest.model_validate(
+                    intent.payload["request"] if intent else None
+                )
+            except (KeyError, ValueError):
+                continue
+            if (
+                request.kind is expected_git_kinds[result.operation]
+                and request.repository_id == result.repository_id
+            ):
+                git_operations.setdefault(result.repository_id, set()).add(
+                    result.operation
+                )
         git_delivered: dict[str, bool] = {}
         for target in contract.git_policy.targets:
             required: set[str] = set()
@@ -480,15 +751,81 @@ class RunStore:
     def record_checker(
         self,
         *,
-        actor: str,
+        checker_id: str,
         verdict: CheckerVerdict,
         findings: list[str],
     ) -> LoopEvent:
+        from loop_engineering.contract import contract_fingerprint
+        from loop_engineering.evidence import DoneEvaluator, git_fingerprint
+        from loop_engineering.models.evidence import CompletionContext
+        from loop_engineering.state_machine import BudgetCondition, budget_status
+
+        contract = LoopContract.model_validate(
+            yaml.safe_load(self.contract_path.read_text(encoding="utf-8"))
+        )
+        if self.current_contract_authorization() is None:
+            raise PermissionError("current contract approval is missing or stale")
+        state = self.load_state()
+        if state.status is not LoopStatus.CHECKING:
+            raise ValueError("Checker verdict requires checking state")
+        if self.pending_intents():
+            raise ValueError("pending intent must be reconciled before Checker review")
+        budget = budget_status(contract, state)
+        if budget.condition is BudgetCondition.EXHAUSTED:
+            raise ValueError(
+                "Checker budget is exhausted: " + "; ".join(budget.reasons)
+            )
+        used_ids = {
+            str(event.payload.get("checker_id"))
+            for event in self.events()
+            if event.kind is EventKind.CHECKER
+        }
+        if checker_id in used_ids:
+            raise ValueError("Checker review requires a fresh Checker identifier")
+
+        evidence = self._authoritative_evidence()
+        source_fingerprints = {
+            repository.id: git_fingerprint(repository.path)
+            for repository in contract.repositories
+        }
+        if verdict is CheckerVerdict.ACCEPT:
+            evidence_evaluation = DoneEvaluator(contract).evaluate(
+                CompletionContext(
+                    evidence=evidence,
+                    current_fingerprints=source_fingerprints,
+                    checker_verdict=CheckerVerdict.ACCEPT,
+                    git_delivered={
+                        target.repository_id: True
+                        for target in contract.git_policy.targets
+                    },
+                    scope_valid=True,
+                    gates_clear=True,
+                    contract_current=True,
+                )
+            )
+            if not evidence_evaluation.done:
+                raise ValueError(
+                    "Checker ACCEPT requires fresh validation evidence: "
+                    + "; ".join(evidence_evaluation.reasons)
+                )
+
+        reviewed_through = self.events()[-1].sequence if self.events() else 0
+        attestation = CheckerAttestation(
+            checker_id=checker_id,
+            protocol_version=contract.protocol_version,
+            contract_version=contract.contract_version,
+            contract_sha256=contract_fingerprint(contract),
+            source_fingerprints=source_fingerprints,
+            evidence_digests=self._evidence_digests(evidence),
+            reviewed_through_sequence=reviewed_through,
+            verdict=verdict,
+            findings=findings,
+        )
         event = self.append_event(
-            actor=actor,
+            actor=f"checker:{checker_id}",
             kind=EventKind.CHECKER,
             summary=f"checker verdict: {verdict.value}",
-            payload={"verdict": verdict.value, "findings": findings},
+            payload=attestation.model_dump(mode="json"),
         )
         if verdict is CheckerVerdict.REVISE:
             state = self.load_state()
@@ -540,14 +877,15 @@ class RunStore:
         events = self.events()
         state = self.load_state()
         approvals: dict[str, bool] = {}
-        latest_checker: str | None = None
+        latest_checker: CheckerAttestation | None = None
         for event in events:
             if event.contract_version != state.contract_version:
                 continue
             if event.kind is EventKind.APPROVAL:
                 approvals[str(event.payload["gate"])] = bool(event.payload["approved"])
             elif event.kind is EventKind.CHECKER:
-                latest_checker = str(event.payload["verdict"])
+                latest_checker = CheckerAttestation.model_validate(event.payload)
+        checker_attestation = self.current_checker_attestation()
         return {
             **state.model_dump(mode="json"),
             "pending_intents": [
@@ -555,5 +893,11 @@ class RunStore:
             ],
             "approvals": approvals,
             "contract_authorized": self.current_contract_authorization() is not None,
-            "checker_verdict": latest_checker,
+            "checker_verdict": (
+                latest_checker.verdict.value if latest_checker else None
+            ),
+            "checker_current": checker_attestation is not None,
+            "checker_id": (
+                latest_checker.checker_id if latest_checker else None
+            ),
         }

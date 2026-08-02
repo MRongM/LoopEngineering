@@ -45,15 +45,19 @@ For each unmet acceptance criterion:
      isolated risk prompt.
    - `deny`: record the rejection and never execute the operation.
 3. Immediately before every approved external state change, run
-   `loop-engine run intent` with the exact action and target.
+   `loop-engine run intent "<run-dir>" "<request-json>" --actor maker
+   --summary "<planned-mutation>"`. Core rechecks current approval, state, budget and Gate in
+   this operation and persists the exact checked `ActionRequest`; the earlier Gate check is only
+   a preview and cannot authorize a different request.
 4. Make the change without touching unrelated user work.
 5. Run `loop-engine run result` immediately after observing real state,
    marking whether new evidence/progress occurred and whether the strategy was reused.
-   Git results use payload shape
-   `{"git":{"repository_id":"target","operation":"push","success":true,
-   "commit_sha":"<sha>","pr_url":"<url-or-empty>"}}`; record `create_pr` as a
-   separate successful operation. Completion derives per-repository delivery only
-   from these current-contract result events, never from prose.
+   Generic `loop-engine run result` cannot report Git or validator evidence. Use it only to
+   close the matching ordinary action intent. Git intent/results come only from the
+   `loop-engine git` subcommands, and validator intent/results come only from
+   `loop-engine evidence run`; these dedicated paths bind their observed results to the
+   checked request. Completion derives delivery and evidence only from those authoritative
+   current-contract result events, never from generic JSON or prose.
 6. Run `loop-engine evidence run "<run-dir>" "<VAL-ID>"`.
    Core executes validation in a disposable Git snapshot under
    `.loop-engine/cache/`, closes timeout/start failures as failed results and rejects any
@@ -77,7 +81,17 @@ For each unmet acceptance criterion:
 - Medium/high risk: dispatch a fresh independent Checker context.
 - Checker reads the contract, actual diff and raw evidence, then returns only
   `ACCEPT`, `REVISE` or `BLOCK` with findings and evidence.
-- Record the verdict and findings with `loop-engine run checker`.
+- Use the actual identifier returned by the host dispatch. Never invent or reuse a Checker ID.
+- Record the verdict and findings with `loop-engine run checker "<run-dir>"
+  --checker-id "<host-checker-id>" --verdict "<accept|revise|block>"
+  --findings-json "<json-array>"`.
+- Core derives and records `contract_sha256`, `source_fingerprints`, `evidence_digests` and
+  `reviewed_through_sequence`; the Maker cannot supply those facts. Any later intent or result
+  invalidates the attestation. A changed contract, source fingerprint or evidence digest also
+  requires a new independent review.
+- The host-provided ID is an Adapter trust assertion rather than cryptographic identity proof.
+  If dispatch identity cannot be established from real host state, treat the independent Checker
+  as unavailable.
 - Checker never edits production code. `REVISE` returns to Maker and consumes a revision.
 - If an independent Checker is unavailable, medium/high work cannot become DONE.
 
@@ -123,7 +137,8 @@ Set `scope_valid` in CompletionContext only from
 Derive `checker_verdict`, `gates_clear` and
 `contract_current` from `loop-engine run status "<run-dir>"`: unresolved
 intent IDs, a paused state, or a required contract gate without an approval event make
-`gates_clear=false`, and contract versions must match.
+`gates_clear=false`, contract versions must match, and a Checker verdict counts only when
+`checker_current=true`.
 Populate evidence only from validator result events returned by
 `loop-engine run events "<run-dir>"`.
 

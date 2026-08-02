@@ -28,9 +28,13 @@ After Run creation and approval:
 
 1. Call `get_goal`. If an unrelated active Goal exists, treat it as a platform hard gate;
    never replace or adopt it. Reconcile an already matching Goal instead of creating another.
-2. Serialize and run the exact `platform_state` `gate check` for Goal creation.
-3. Record a Loop intent containing the loop ID, absolute run directory and canonical
-   objective SHA-256.
+2. Advance the approved Run through its required design/planning transitions into `executing`.
+   Serialize the exact `platform_state` `ActionRequest` under `<run-dir>/inputs/` and run its
+   `gate check` for Goal creation.
+3. Record the checked request immediately before the host call with
+   `loop-engine run intent "<run-dir>" "<request-json>" --actor maker
+   --summary "create bound Codex Goal"`. Supplemental payload may contain the loop ID,
+   absolute run directory and canonical objective SHA-256, but cannot replace the request.
 4. Call `create_goal`. Do not set `token_budget` unless the user explicitly supplies it;
    never infer a token amount from Loop budgets.
 5. Observe the real Goal state and record the result. Persist a Goal identifier only when
@@ -73,9 +77,9 @@ intent pauses the bridge. Never infer approval or task identity from Goal contin
   preserve its ledger and require explicit `$loop-engine` for new work.
 - For `BLOCKED` or `BUDGET_EXHAUSTED`, leave the Goal unfinished and report the exact stop
   reason. These immutable Runs cannot continue implicitly or have either budget expanded.
-- Only after authoritative Loop `DONE` may the Adapter gate the exact Goal-completion
-  `platform_state`, record its intent, call `update_goal` with `complete`, and record the
-  observed result.
+- Only after authoritative Loop `DONE` may the Adapter serialize and gate the exact
+  Goal-completion `platform_state` request, record it through the same request-bound intent
+  command, call `update_goal` with `complete`, and record the observed generic platform result.
 - Do not call `update_goal` with `blocked`; Codex blocking has separate host rules and is not
   a safe mapping from a Loop status.
 

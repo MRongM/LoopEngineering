@@ -31,6 +31,42 @@ class CheckerVerdict(StrEnum):
     BLOCK = "block"
 
 
+class GitResult(StrictModel):
+    operation: Literal["prepare", "commit", "push", "create_pr"]
+    repository_id: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    success: bool
+    worktree: str | None = None
+    commit_sha: str | None = Field(default=None, pattern=r"^[0-9a-f]{40,64}$")
+    pr_url: str | None = None
+    error_type: str | None = None
+
+
+class CheckerAttestation(StrictModel):
+    checker_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$")
+    protocol_version: Literal["0.1.0"]
+    contract_version: int = Field(ge=1)
+    contract_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_fingerprints: dict[str, str]
+    evidence_digests: dict[str, str]
+    reviewed_through_sequence: int = Field(ge=0)
+    verdict: CheckerVerdict
+    findings: list[str]
+
+    @field_validator("checker_id")
+    @classmethod
+    def reject_reserved_checker_identifiers(cls, value: str) -> str:
+        if value.casefold() in {"maker", "user", "validator", "git", "checker"}:
+            raise ValueError("reserved Checker identifier cannot prove independence")
+        return value
+
+    @field_validator("source_fingerprints", "evidence_digests")
+    @classmethod
+    def require_sha256_fact_bindings(cls, values: dict[str, str]) -> dict[str, str]:
+        if any(not re.fullmatch(r"[0-9a-f]{64}", value) for value in values.values()):
+            raise ValueError("Checker fact bindings must be SHA-256 values")
+        return values
+
+
 class LoopState(StrictModel):
     loop_id: str
     contract_version: int = Field(ge=1)

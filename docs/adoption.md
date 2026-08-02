@@ -14,6 +14,11 @@ Loop Engineering 0.1.0 是首个版本，只提供 Autonomous。新合同固定�
 `mode: autonomous`，并在批准前预检 `execution_plan`；批准绑定完整合同、风险、预算
 和安全门禁。Core 只接受当前协议，不提供版本兼容层。身份边界见[首版身份](release-identity.md)。
 
+Loop Engineering 是协作式强制协议，不是对宿主工具的对抗式沙箱。Core 会在受检入口
+内部重验批准、状态、预算与 Gate，但无法拦截 Agent 直接使用宿主文件系统、Shell 或网络
+工具；合规 Adapter 必须把所有外部变更路由到受检入口。Core 会重建 Checker 事实新鲜度，
+Checker 的独立身份则由宿主 Adapter 根据真实调度状态断言，而非由 Core 加密证明。
+
 可直接使用以下任务模板：
 
 ```text

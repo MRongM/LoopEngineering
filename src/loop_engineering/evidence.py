@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from loop_engineering.contract import contract_fingerprint, load_contract
 from loop_engineering.layout import CONTROL_DIR_NAME
 from loop_engineering.ledger import RunStore
 from loop_engineering.models.contract import LoopContract, RiskLevel
@@ -15,9 +16,10 @@ from loop_engineering.models.evidence import (
     EvidenceRecord,
     ScopeEvaluation,
 )
-from loop_engineering.models.run import CheckerVerdict
+from loop_engineering.models.run import CheckerVerdict, LoopStatus
 from loop_engineering.paths import is_allowed_path
 from loop_engineering.redaction import redact
+from loop_engineering.state_machine import BudgetCondition, budget_status
 
 
 def _run(
@@ -243,7 +245,30 @@ class ValidationRunner:
         self.contract = contract
         self.store = store
 
+    def _require_current_validation_authority(self) -> None:
+        persisted = load_contract(self.store.contract_path)
+        if contract_fingerprint(self.contract) != contract_fingerprint(persisted):
+            raise ValueError("validation contract does not match the persisted contract")
+        if self.store.current_contract_authorization() is None:
+            raise PermissionError("current contract approval is missing or stale")
+        state = self.store.load_state()
+        if state.status is not LoopStatus.VERIFYING:
+            raise ValueError("validation requires verifying state")
+        budget = budget_status(persisted, state)
+        if budget.condition is BudgetCondition.EXHAUSTED:
+            raise ValueError(
+                "validation budget is exhausted: " + "; ".join(budget.reasons)
+            )
+        if budget.condition is BudgetCondition.DIAGNOSIS_REQUIRED:
+            raise ValueError(
+                "validation requires diagnosis before another command: "
+                + "; ".join(budget.reasons)
+            )
+        if self.store.pending_intents():
+            raise ValueError("pending intent must be reconciled before validation")
+
     def run(self, command_id: str) -> EvidenceRecord:
+        self._require_current_validation_authority()
         command = next(
             item for item in self.contract.validation_commands if item.id == command_id
         )
@@ -278,9 +303,8 @@ class ValidationRunner:
         )
         before_fingerprint = git_fingerprint(repository_root)
         before_paths = _working_paths(repository_root)
-        action_id = self.store.record_intent(
-            actor="validator",
-            summary=f"run {command.id}",
+        action_id = self.store.record_validation_intent(
+            command_id=command.id,
             payload={
                 "argv": command.argv,
                 "cwd": str(cwd),
@@ -390,11 +414,9 @@ class ValidationRunner:
             error_type=error_type,
             timed_out=timed_out,
         )
-        self.store.record_result(
+        self.store.record_evidence_result(
             action_id=action_id,
-            actor="validator",
-            summary=f"{command.id} exit={exit_code}",
-            payload={"evidence": evidence.model_dump(mode="json")},
+            evidence=evidence,
         )
         return evidence
 

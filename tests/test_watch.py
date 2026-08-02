@@ -82,7 +82,7 @@ def test_load_dashboard_isolates_malformed_run_payloads(tmp_path: Path) -> None:
     dashboard = watch.load_dashboard(project)
 
     assert [run.loop_id for run in dashboard.runs] == ["loop-valid"]
-    assert dashboard.warnings == ["loop-malformed: ValueError"]
+    assert dashboard.warnings == ["loop-malformed: ValidationError"]
 
 
 def test_load_dashboard_aggregates_current_run_facts(tmp_path: Path) -> None:
@@ -107,15 +107,19 @@ def test_load_dashboard_aggregates_current_run_facts(tmp_path: Path) -> None:
         stdout_sha256="0" * 64,
         stderr_sha256="0" * 64,
     )
-    validation_id = store.record_intent(
+    validation_id = "validation-watch"
+    store.append_event(
         actor="validator",
+        kind=EventKind.INTENT,
         summary="run VAL-1",
-        payload={},
-    )
-    store.record_result(
         action_id=validation_id,
+        payload={"validation": {"command_id": "VAL-1"}},
+    )
+    store.append_event(
         actor="validator",
+        kind=EventKind.RESULT,
         summary="VAL-1 passed",
+        action_id=validation_id,
         payload={"evidence": evidence.model_dump(mode="json")},
     )
     for target in (
@@ -130,20 +134,48 @@ def test_load_dashboard_aggregates_current_run_facts(tmp_path: Path) -> None:
         approved=True,
         summary="approved",
     )
-    pending_id = store.record_intent(
+    pending_id = "pending-watch"
+    store.append_event(
         actor="maker",
+        kind=EventKind.INTENT,
         summary="update documentation",
-        payload={},
+        action_id=pending_id,
+        payload={
+            "request": {
+                "kind": "file_write",
+                "repository_id": "target",
+                "target": "src/",
+                "impact": "External state will change",
+                "risk": "The change may be difficult to recover",
+                "recovery": "Use a forward fix or an approved revert",
+                "evidence": "The approved Loop Contract requires this action",
+                "forward_plan": None,
+                "compatibility_analysis": None,
+            }
+        },
     )
-    store.record_checker(
-        actor="checker",
-        verdict=CheckerVerdict.REVISE,
-        findings=["Clarify the command example"],
+    reviewed_through = store.events()[-1].sequence
+    store.append_event(
+        actor="checker:watch-checker-1",
+        kind=EventKind.CHECKER,
+        summary="checker verdict: revise",
+        payload={
+            "checker_id": "watch-checker-1",
+            "protocol_version": "0.1.0",
+            "contract_version": 1,
+            "contract_sha256": "0" * 64,
+            "source_fingerprints": {},
+            "evidence_digests": {},
+            "reviewed_through_sequence": reviewed_through,
+            "verdict": "revise",
+            "findings": ["Clarify the command example"],
+        },
     )
     state = store.load_state().model_copy(
         update={
             "status": LoopStatus.EXECUTING,
             "iterations_used": 2,
+            "checker_revisions_used": 1,
             "no_progress_cycles": 1,
             "started_at": fixed_now - timedelta(minutes=12),
             "updated_at": fixed_now - timedelta(seconds=5),
@@ -181,10 +213,13 @@ def test_load_dashboard_does_not_treat_old_contract_intent_as_running(
     project.mkdir()
     initialize_project(project)
     store = create_run(project, "loop-revised")
-    old_intent_id = store.record_intent(
+    old_intent_id = "old-validation"
+    store.append_event(
         actor="validator",
+        kind=EventKind.INTENT,
         summary="run VAL-1",
-        payload={},
+        action_id=old_intent_id,
+        payload={"validation": {"command_id": "VAL-1"}},
     )
     for target in (
         LoopStatus.DISCOVERING,
@@ -255,10 +290,18 @@ def test_render_dashboard_adapts_wide_and_compact_output(tmp_path: Path) -> None
             }
         )
     )
-    active.record_intent(
+    active.append_event(
         actor="maker",
+        kind=EventKind.INTENT,
         summary="implement watch dashboard",
-        payload={},
+        action_id="watch-action",
+        payload={
+            "request": {
+                "kind": "file_write",
+                "repository_id": "target",
+                "target": "src/",
+            }
+        },
     )
     terminal.save_state(
         terminal.load_state().model_copy(update={"status": LoopStatus.DONE})

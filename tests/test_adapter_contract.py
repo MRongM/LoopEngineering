@@ -226,6 +226,45 @@ def test_codex_skill_requires_isolated_validation_and_fresh_evidence() -> None:
         assert required in body
 
 
+def test_codex_skill_routes_mutations_through_checked_core_entrypoints() -> None:
+    body = " ".join(read_adapter_protocol().split())
+
+    for required in (
+        'loop-engine run intent "<run-dir>" "<request-json>"',
+        "exact checked `ActionRequest`",
+        "Generic `loop-engine run result` cannot report Git or validator evidence.",
+        "`loop-engine git` subcommands",
+        "`loop-engine evidence run`",
+    ):
+        assert required in body
+
+
+def test_codex_skill_requires_bound_fresh_checker_attestations() -> None:
+    body = " ".join(read_adapter_protocol().split())
+
+    for required in (
+        '--checker-id "<host-checker-id>"',
+        "Never invent or reuse a Checker ID.",
+        "`contract_sha256`",
+        "`source_fingerprints`",
+        "`evidence_digests`",
+        "`reviewed_through_sequence`",
+        "Any later intent or result invalidates the attestation.",
+    ):
+        assert required in body
+
+
+def test_codex_skill_states_the_cooperative_host_trust_boundary() -> None:
+    body = " ".join(read_adapter_protocol().split())
+
+    for required in (
+        "cooperative enforcement protocol, not an adversarial sandbox",
+        "Core cannot intercept raw host filesystem, shell or network tools",
+        "route every external mutation through the checked Core entry points",
+    ):
+        assert required in body
+
+
 def test_codex_skill_keeps_goal_continuation_bound_to_the_run() -> None:
     body = read_adapter_protocol()
 
@@ -284,6 +323,11 @@ def test_active_docs_describe_only_the_first_release() -> None:
     for path in active:
         text = path.read_text(encoding="utf-8")
         assert "0.1.0" in text, path
+
+    amended_adr = Path("docs/adr/0001-require-manual-skill-invocation.md").read_text(
+        encoding="utf-8"
+    )
+    assert re.search(r"\b0\.3(?:\.\d+)?\b", amended_adr) is None
 
 
 def test_codex_implicit_invocation_is_eligibility_not_task_authorization() -> None:

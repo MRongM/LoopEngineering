@@ -14,8 +14,8 @@ from loop_engineering.git_automation import GitAutomation
 from loop_engineering.ledger import RunStore
 from loop_engineering.models.action import ActionKind, ActionRequest
 from loop_engineering.models.evidence import CompletionContext
-from loop_engineering.models.run import CheckerVerdict, LoopStatus
-from loop_engineering.policy import GateOutcome, GatePolicy
+from loop_engineering.models.run import CheckerVerdict, GitResult, LoopStatus
+from loop_engineering.policy import GatePolicy
 from loop_engineering.project import initialize_project
 from loop_engineering.redaction import redact
 from loop_engineering.state_machine import BudgetCondition, budget_status
@@ -82,18 +82,11 @@ def _run_git_action(args: argparse.Namespace, store: RunStore) -> dict[str, obje
         args.command,
         args.repository_id,
     )
-    decision = GatePolicy(
-        contract,
-        authorization=store.current_contract_authorization(),
-    ).evaluate(request)
-    if decision.outcome is not GateOutcome.ALLOW:
-        raise PermissionError(decision.reason)
-    if store.load_state().status is not LoopStatus.EXECUTING:
-        raise ValueError("Git mutation requires executing state")
-    action_id = store.record_intent(
+    action_id = store.record_action_intent(
         actor="git",
         summary=f"Git {operation}",
-        payload={"request": request.model_dump(mode="json")},
+        request=request,
+        payload={},
     )
     git_result: dict[str, object] = {
         "operation": operation,
@@ -123,19 +116,15 @@ def _run_git_action(args: argparse.Namespace, store: RunStore) -> dict[str, obje
             raise AssertionError("unreachable Git command")
     except Exception as error:
         git_result["error_type"] = type(error).__name__
-        store.record_result(
+        store.record_git_result(
             action_id=action_id,
-            actor="git",
-            summary=f"Git {operation} failed",
-            payload={"git": git_result},
+            result=GitResult.model_validate(git_result),
         )
         raise
     git_result["success"] = True
-    store.record_result(
+    store.record_git_result(
         action_id=action_id,
-        actor="git",
-        summary=f"Git {operation} succeeded",
-        payload={"git": git_result},
+        result=GitResult.model_validate(git_result),
     )
     return output
 
@@ -187,6 +176,7 @@ def _parser() -> argparse.ArgumentParser:
     run_complete.add_argument("--reason", required=True)
     run_intent = run_commands.add_parser("intent")
     run_intent.add_argument("run_dir", type=Path)
+    run_intent.add_argument("request", type=Path)
     run_intent.add_argument("--actor", required=True)
     run_intent.add_argument("--summary", required=True)
     run_intent.add_argument("--payload-json", default="{}")
@@ -218,7 +208,7 @@ def _parser() -> argparse.ArgumentParser:
     run_approval.add_argument("--summary", required=True)
     run_checker = run_commands.add_parser("checker")
     run_checker.add_argument("run_dir", type=Path)
-    run_checker.add_argument("--actor", required=True)
+    run_checker.add_argument("--checker-id", required=True)
     run_checker.add_argument(
         "--verdict",
         choices=[verdict.value for verdict in CheckerVerdict],
@@ -322,9 +312,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             _json(state.model_dump(mode="json"))
         elif (args.group, args.command) == ("run", "intent"):
-            action_id = RunStore.open(args.run_dir).record_intent(
+            request = ActionRequest.model_validate_json(
+                args.request.read_text(encoding="utf-8")
+            )
+            action_id = RunStore.open(args.run_dir).record_action_intent(
                 actor=args.actor,
                 summary=args.summary,
+                request=request,
                 payload=json.loads(args.payload_json),
             )
             _json({"action_id": action_id})
@@ -354,7 +348,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             _json(event.model_dump(mode="json"))
         elif (args.group, args.command) == ("run", "checker"):
             event = RunStore.open(args.run_dir).record_checker(
-                actor=args.actor,
+                checker_id=args.checker_id,
                 verdict=CheckerVerdict(args.verdict),
                 findings=json.loads(args.findings_json),
             )

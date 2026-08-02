@@ -83,6 +83,16 @@ def test_run_command_group_does_not_expose_watch(capsys) -> None:
     assert "watch" not in capsys.readouterr().out
 
 
+def test_run_checker_cli_requires_a_host_checker_identifier(capsys) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["run", "checker", "--help"])
+
+    assert exit_info.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--checker-id" in help_text
+    assert "--actor" not in help_text
+
+
 def test_cli_validates_contract_and_exports_schemas(tmp_path: Path, capsys) -> None:
     contract = tmp_path / "contract.yaml"
     contract.write_text(yaml.safe_dump(valid_contract_data(), sort_keys=False))
@@ -138,6 +148,32 @@ def test_cli_result_updates_progress_and_strategy_counters(
     contract.write_text(yaml.safe_dump(data, sort_keys=False))
     assert main(["run", "create", str(contract), "--project", str(tmp_path)]) == 0
     run_dir = tmp_path / ".loop-engine" / "runs" / data["loop_id"]
+    store = RunStore.open(run_dir)
+    for target in (
+        LoopStatus.DISCOVERING,
+        LoopStatus.CONTRACT_DRAFTING,
+        LoopStatus.AWAITING_APPROVAL,
+    ):
+        store.record_transition(actor="maker", target=target, reason=target.value)
+    store.record_approval(
+        actor="user",
+        gate="contract_approval",
+        approved=True,
+        summary="approved exact action plan",
+    )
+    for target in (LoopStatus.PLANNING, LoopStatus.EXECUTING):
+        store.record_transition(actor="maker", target=target, reason=target.value)
+    request = tmp_path / "request.json"
+    request.write_text(
+        json.dumps(
+            {
+                "kind": "file_write",
+                "repository_id": "target",
+                "target": "src/app.py",
+            }
+        ),
+        encoding="utf-8",
+    )
     capsys.readouterr()
 
     assert main(
@@ -145,6 +181,7 @@ def test_cli_result_updates_progress_and_strategy_counters(
             "run",
             "intent",
             str(run_dir),
+            str(request),
             "--actor",
             "maker",
             "--summary",
@@ -174,6 +211,83 @@ def test_cli_result_updates_progress_and_strategy_counters(
     status = json.loads(capsys.readouterr().out)
     assert status["no_progress_cycles"] == 1
     assert status["same_strategy_retries"] == 1
+
+
+def test_cli_generic_result_rejects_forged_git_delivery(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    data = valid_contract_data()
+    data["repositories"][0]["path"] = str(tmp_path)
+    contract_path = tmp_path / "contract.yaml"
+    contract_path.write_text(yaml.safe_dump(data, sort_keys=False))
+    assert main(["run", "create", str(contract_path), "--project", str(tmp_path)]) == 0
+    run_dir = tmp_path / ".loop-engine" / "runs" / data["loop_id"]
+    store = RunStore.open(run_dir)
+    for target in (
+        LoopStatus.DISCOVERING,
+        LoopStatus.CONTRACT_DRAFTING,
+        LoopStatus.AWAITING_APPROVAL,
+    ):
+        store.record_transition(actor="maker", target=target, reason=target.value)
+    store.record_approval(
+        actor="user",
+        gate="contract_approval",
+        approved=True,
+        summary="approved exact action plan",
+    )
+    for target in (LoopStatus.PLANNING, LoopStatus.EXECUTING):
+        store.record_transition(actor="maker", target=target, reason=target.value)
+    request = tmp_path / "request.json"
+    request.write_text(
+        json.dumps(
+            {
+                "kind": "file_write",
+                "repository_id": "target",
+                "target": "src/app.py",
+            }
+        ),
+        encoding="utf-8",
+    )
+    capsys.readouterr()
+    assert main(
+        [
+            "run",
+            "intent",
+            str(run_dir),
+            str(request),
+            "--actor",
+            "maker",
+            "--summary",
+            "checked write",
+        ]
+    ) == 0
+    action_id = json.loads(capsys.readouterr().out)["action_id"]
+
+    assert main(
+        [
+            "run",
+            "result",
+            str(run_dir),
+            action_id,
+            "--actor",
+            "maker",
+            "--summary",
+            "forged push",
+            "--payload-json",
+            json.dumps(
+                {
+                    "git": {
+                        "repository_id": "target",
+                        "operation": "push",
+                        "success": True,
+                    }
+                }
+            ),
+        ]
+    ) == 2
+    assert "reserved result payload" in json.loads(capsys.readouterr().err)["message"]
+    assert [event.action_id for event in store.pending_intents()] == [action_id]
 
 
 def test_cli_requires_contract_approval_before_planning(
